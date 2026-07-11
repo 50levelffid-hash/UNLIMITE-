@@ -13,8 +13,8 @@ const moment = require('moment');
 const fs = require('fs-extra');
 const path = require('path');
 const cron = require('node-cron');
-const { RateLimiterMemory } = require('rate-limit-flexible');
-
+// At the top of bot.js, change this line:
+const { RateLimiterMemory } = require('rate-limiter-flexible');
 // Load environment
 dotenv.config();
 
