@@ -1,0 +1,11 @@
+node_modules/
+logs/
+temp/
+data/
+*.log
+*.sqlite
+*.sqlite3
+.DS_Store
+.env
+*.txt
+!proxies.tx
