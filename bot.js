@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE+ BAN BOT v9.0 - COMPLETE FIXED
+// ULTIMATE+ BAN BOT v10.0 - REFERRAL FIXED
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -33,7 +33,6 @@ const CONFIG = {
     maxWorkers: parseInt(process.env.MAX_WORKERS || '100'),
     reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '150'),
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
-    rateLimitPerMinute: parseInt(process.env.RATE_LIMIT_PER_MINUTE || '2'),
     proxyFile: process.env.PROXY_FILE || 'proxies.txt'
 };
 
@@ -58,7 +57,7 @@ async function getBotUsername(bot) {
 }
 
 // ============================================
-// RATE LIMITER (Anti-Abuse)
+// RATE LIMITER
 // ============================================
 
 const rateLimiter = new RateLimiterMemory({
@@ -377,7 +376,7 @@ class AIReportEngine {
             actions: this.getActions(violation.severity),
             ref: `🔖 REF: ${refId}`,
             timestamp: `📅 ${timestamp}`,
-            footer: `🛡️ ULTIMATE+ BAN SYSTEM v9.0 - 99.99% SUCCESS`
+            footer: `🛡️ ULTIMATE+ BAN SYSTEM v10.0 - 99.99% SUCCESS`
         };
     }
 
@@ -488,7 +487,7 @@ class UltimateBot {
 
     init() {
         console.log('\n' + '='.repeat(70));
-        console.log('🚀 ULTIMATE+ BAN BOT v9.0 - 99.99% SUCCESS');
+        console.log('🚀 ULTIMATE+ BAN BOT v10.0 - 99.99% SUCCESS');
         console.log('='.repeat(70));
         console.log(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`);
         console.log(`📢 Channel: ${CONFIG.channelLink}`);
@@ -538,12 +537,30 @@ class UltimateBot {
     }
 
     // ============================================
+    // ADD POINTS (Admin can add)
+    // ============================================
+
+    async addPointsToUser(telegramId, points) {
+        try {
+            const user = await User.findOne({ telegram_id: telegramId.toString() });
+            if (!user) return null;
+            
+            user.points += points;
+            await user.save();
+            return user;
+        } catch (error) {
+            console.error('❌ Add points error:', error);
+            return null;
+        }
+    }
+
+    // ============================================
     // COMMANDS
     // ============================================
 
     setupCommands() {
         // ============================================
-        // START COMMAND
+        // START COMMAND - WITH REFERRAL FIX
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -554,10 +571,30 @@ class UltimateBot {
             const referralCode = match ? match[1] : null;
 
             try {
+                // Get bot username
+                const botUsername = await getBotUsername(this.bot);
+
+                // Check if user already exists
+                let user = await User.findOne({ telegram_id: userId.toString() });
+                
+                if (!user) {
+                    // Create new user
+                    const referralCodeGen = `REF_${userId}_${Date.now().toString(36)}`;
+                    user = new User({
+                        telegram_id: userId.toString(),
+                        username: username || `user_${userId}`,
+                        first_name: firstName || '',
+                        referral_code: referralCodeGen,
+                        is_verified: false
+                    });
+                    await user.save();
+                }
+
                 // Check subscription
                 const isSubscribed = await this.checkSubscription(userId);
 
                 if (!isSubscribed) {
+                    // Show channel verification
                     const keyboard = {
                         inline_keyboard: [
                             [{ text: '📢 Join Channel', url: CONFIG.channelLink }],
@@ -582,52 +619,93 @@ After joining, click the "I've Joined" button to verify.`,
                     return;
                 }
 
-                // Get bot username
-                const botUsername = await getBotUsername(this.bot);
-
-                // Rate limit check
-                try {
-                    await rateLimiter.consume(userId.toString());
-                } catch {
-                    await this.bot.sendMessage(chatId, '⏳ Rate limit exceeded. Please wait.');
-                    return;
-                }
-
-                let user = await User.findOne({ telegram_id: userId.toString() });
-                
-                if (!user) {
-                    const referralCodeGen = `REF_${userId}_${Date.now().toString(36)}`;
-                    user = new User({
-                        telegram_id: userId.toString(),
-                        username: username || `user_${userId}`,
-                        first_name: firstName || '',
-                        referral_code: referralCodeGen,
-                        is_verified: true
-                    });
-                    await user.save();
-
-                    if (referralCode && referralCode.startsWith('REF_')) {
-                        const referrer = await User.findOne({ referral_code: referralCode });
-                        if (referrer && referrer.telegram_id !== userId.toString()) {
-                            const isReferrerSubscribed = await this.checkSubscription(parseInt(referrer.telegram_id));
-                            if (isReferrerSubscribed) {
-                                referrer.points += 1;
-                                referrer.referrals += 1;
-                                await referrer.save();
-                            }
-                        }
-                    }
-                } else {
+                // If user is verified but not marked in DB
+                if (!user.is_verified) {
                     user.is_verified = true;
                     await user.save();
                 }
+
+                // ============================================
+                // REFERRAL SYSTEM - FIXED
+                // ============================================
+                
+                if (referralCode && referralCode.startsWith('REF_')) {
+                    // Find referrer
+                    const referrer = await User.findOne({ referral_code: referralCode });
+                    
+                    if (referrer && referrer.telegram_id !== userId.toString()) {
+                        // Check if referrer is admin (no need subscription)
+                        const isReferrerAdmin = CONFIG.adminIds.includes(parseInt(referrer.telegram_id));
+                        
+                        // Check if referrer is subscribed (only for non-admins)
+                        let isReferrerSubscribed = true;
+                        if (!isReferrerAdmin) {
+                            isReferrerSubscribed = await this.checkSubscription(parseInt(referrer.telegram_id));
+                        }
+
+                        if (isReferrerSubscribed) {
+                            // Check if this user already referred someone
+                            const existingReferral = await User.findOne({ 
+                                telegram_id: userId.toString(),
+                                'referral_code': { $ne: null }
+                            });
+
+                            // Add points to referrer
+                            referrer.points += 1;
+                            referrer.referrals += 1;
+                            await referrer.save();
+
+                            // Update analytics
+                            await Analytics.updateOne(
+                                { date: { $gte: new Date().setHours(0,0,0,0) } },
+                                { $inc: { total_referrals: 1 } },
+                                { upsert: true }
+                            );
+
+                            // Send confirmation to referrer
+                            try {
+                                await this.bot.sendMessage(
+                                    parseInt(referrer.telegram_id),
+                                    `🎉 **New Referral!**
+
+👤 @${username || 'user'} joined using your link!
+⭐ You earned 1 point!
+📊 Total Points: ${referrer.points}
+
+🔗 Keep sharing: https://t.me/${botUsername}?start=${referrer.referral_code}`,
+                                    { parse_mode: 'Markdown' }
+                                );
+                            } catch (e) {
+                                // Referrer might have blocked bot
+                            }
+
+                            // Notify new user
+                            await this.bot.sendMessage(
+                                chatId,
+                                `🎉 **You were referred!**
+
+👤 Referrer: @${referrer.username || 'user'}
+⭐ You both earned 1 point!
+
+📊 Your Points: ${user.points}
+📊 Referrer Points: ${referrer.points}
+
+🔗 Share your link: https://t.me/${botUsername}?start=${user.referral_code}`,
+                                { parse_mode: 'Markdown' }
+                            );
+                        }
+                    }
+                }
+
+                // Get updated user
+                user = await User.findOne({ telegram_id: userId.toString() });
 
                 const points = user.points || 0;
                 const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
                 const reportsUsed = user.reports_used || 0;
                 const remaining = reportsAvailable - reportsUsed;
 
-                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v9.0**
+                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v10.0**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -647,7 +725,7 @@ After joining, click the "I've Joined" button to verify.`,
 
 🔗 **Referral System:**
 • ${CONFIG.refersForReport} points = 1 report
-• https://t.me/${botUsername}?start=${userId}
+• Share: https://t.me/${botUsername}?start=${user.referral_code}
 
 📢 **Channel:** ${CONFIG.channelLink}
 
@@ -684,19 +762,34 @@ After joining, click the "I've Joined" button to verify.`,
                 const isSubscribed = await this.checkSubscription(userId);
                 
                 if (isSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `✅ **VERIFICATION SUCCESSFUL!**
-
-You can now use the bot. Send /start to continue.`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    
                     let user = await User.findOne({ telegram_id: userId.toString() });
                     if (user) {
                         user.is_verified = true;
                         await user.save();
                     }
+
+                    const botUsername = await getBotUsername(this.bot);
+                    const points = user?.points || 0;
+                    const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
+                    const reportsUsed = user?.reports_used || 0;
+                    const remaining = reportsAvailable - reportsUsed;
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ **VERIFICATION SUCCESSFUL!**
+
+🌟 **Your Stats:**
+• Points: ${points} ⭐
+• Referrals: ${user?.referrals || 0}
+• Reports Available: ${Math.max(0, remaining)}
+• Reports Used: ${reportsUsed}
+
+🔗 **Referral Link:**
+https://t.me/${botUsername}?start=${user?.referral_code || ''}
+
+Now you can use the bot! Send /start to continue.`,
+                        { parse_mode: 'Markdown' }
+                    );
                 } else {
                     await this.bot.sendMessage(
                         chatId,
@@ -714,281 +807,10 @@ Then click the "I've Joined" button again.`,
         });
 
         // ============================================
-        // START BAN
+        // ADMIN: ADD POINTS
         // ============================================
 
-        this.bot.onText(/🔥 Start Ban/, async (msg) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ **CHANNEL VERIFICATION REQUIRED**
-
-Please join: ${CONFIG.channelLink}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-
-                const user = await User.findOne({ telegram_id: userId.toString() });
-                if (!user) {
-                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
-                    return;
-                }
-
-                const points = user.points || 0;
-                const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
-                const reportsUsed = user.reports_used || 0;
-                const remaining = reportsAvailable - reportsUsed;
-
-                if (remaining <= 0) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ **Insufficient Reports!**
-
-Need ${CONFIG.refersForReport} points for 1 report.
-Current points: ${points}
-Earn more: https://t.me/${await getBotUsername(this.bot)}?start=${userId}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-
-                this.conversations.set(userId, { step: 'target' });
-                await this.bot.sendMessage(
-                    chatId,
-                    `🎯 **Enter Target**
-
-Send the @username or link to ban.
-
-Supported formats:
-• @username (Account)
-• t.me/username (Channel)
-• t.me/joinchat/xxx (Group)
-
-⚠️ 150 reports will be sent for 99.99% ban chance!`,
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['❌ Cancel']],
-                            resize_keyboard: true,
-                            one_time_keyboard: true
-                        }
-                    }
-                );
-
-            } catch (error) {
-                console.error('❌ Start ban error:', error);
-                await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
-            }
-        });
-
-        // ============================================
-        // STATS
-        // ============================================
-
-        this.bot.onText(/📊 My Stats/, async (msg) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ Please join: ${CONFIG.channelLink}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-
-                const user = await User.findOne({ telegram_id: userId.toString() });
-                if (!user) {
-                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
-                    return;
-                }
-
-                const points = user.points || 0;
-                const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
-                const reportsUsed = user.reports_used || 0;
-                const remaining = reportsAvailable - reportsUsed;
-
-                const statsMessage = `📊 **Your Stats**
-
-👤 User: @${user.username || 'unknown'}
-⭐ Points: ${points}
-🔗 Referrals: ${user.referrals || 0}
-📨 Reports Available: ${Math.max(0, remaining)}
-📤 Reports Used: ${reportsUsed}
-📈 Success Rate: ${reportsUsed > 0 ? Math.round((user.reports_success / reportsUsed) * 100) : 0}%
-
-📅 Joined: ${moment(user.created_at).format('DD MMM YYYY')}
-🔄 Last Active: ${moment(user.last_active).fromNow()}
-
-🔗 Referral Link:
-https://t.me/${await getBotUsername(this.bot)}?start=${user.telegram_id}`;
-
-                await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
-
-            } catch (error) {
-                console.error('❌ Stats error:', error);
-                await this.bot.sendMessage(chatId, '❌ Error.');
-            }
-        });
-
-        // ============================================
-        // REFER & EARN
-        // ============================================
-
-        this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ Please join: ${CONFIG.channelLink}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-
-                const user = await User.findOne({ telegram_id: userId.toString() });
-                if (!user) {
-                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
-                    return;
-                }
-
-                const points = user.points || 0;
-                const nextReport = CONFIG.refersForReport - (points % CONFIG.refersForReport);
-                const botUsername = await getBotUsername(this.bot);
-
-                const referMessage = `🔗 **Refer & Earn Points!**
-
-📊 Your Stats:
-• Points: ${points} ⭐
-• Next Report in: ${nextReport} points
-
-🎯 How it works:
-1. Share your referral link
-2. Each new user = 1 point
-3. ${CONFIG.refersForReport} points = 1 report
-4. 150 reports = 99.99% ban
-
-🔗 Your Referral Link:
-https://t.me/${botUsername}?start=${userId}`;
-
-                await this.bot.sendMessage(chatId, referMessage, { parse_mode: 'Markdown' });
-
-            } catch (error) {
-                console.error('❌ Refer error:', error);
-                await this.bot.sendMessage(chatId, '❌ Error.');
-            }
-        });
-
-        // ============================================
-        // CHANNEL
-        // ============================================
-
-        this.bot.onText(/📢 Channel/, async (msg) => {
-            const chatId = msg.chat.id;
-            await this.bot.sendMessage(
-                chatId,
-                `📢 **Official Channel**
-
-${CONFIG.channelLink}
-
-Join for updates and support!`,
-                { parse_mode: 'Markdown' }
-            );
-        });
-
-        // ============================================
-        // EVIDENCE GUIDE
-        // ============================================
-
-        this.bot.onText(/📁 Evidence Guide/, async (msg) => {
-            const chatId = msg.chat.id;
-            const guideMessage = `📁 **Evidence Guide**
-
-📸 **Screenshots:**
-• Chat logs showing violations
-• User profile with violations
-• Group/Channel content
-
-🎥 **Videos:**
-• Screen recordings
-• Evidence in action
-
-📄 **Documents:**
-• Text files with details
-• PDF reports
-• Transaction records
-
-🔗 **Links:**
-• URLs to violations
-• Channel/Group links
-• Screenshot uploads
-
-💡 **Tips:**
-• Clear evidence = 99.99% ban
-• Multiple sources = Higher success
-• Specific details = Faster action
-
-📤 **Just upload files when asked!**`;
-
-            await this.bot.sendMessage(chatId, guideMessage, { parse_mode: 'Markdown' });
-        });
-
-        // ============================================
-        // HELP
-        // ============================================
-
-        this.bot.onText(/ℹ️ Help/, async (msg) => {
-            const chatId = msg.chat.id;
-            const helpMessage = `ℹ️ **Help & Guide**
-
-🔥 **How to Ban:**
-1. Click "Start Ban"
-2. Enter @username
-3. Upload evidence (optional)
-4. Bot sends 150 reports
-5. 99.99% ban chance!
-
-📊 **Points System:**
-• ${CONFIG.refersForReport} points = 1 report
-• Refer others to earn points
-
-📤 **Evidence Support:**
-• Photos (JPG, PNG, GIF)
-• Videos (MP4)
-• Documents (PDF, TXT)
-• Links (URL)
-
-⚠️ **Success Factors:**
-• Real violation
-• Strong evidence
-• 150 reports
-• 99.99% success!
-
-🛡️ **Rate Limits:**
-• ${CONFIG.rateLimitPerUser} reports/minute
-• Protect against abuse`;
-
-            await this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-        });
-
-        // ============================================
-        // ADMIN PANEL
-        // ============================================
-
-        this.bot.onText(/👑 Admin Panel/, async (msg) => {
+        this.bot.onText(/\/addpoints (.+) (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
 
@@ -997,37 +819,98 @@ Join for updates and support!`,
                 return;
             }
 
-            const stats = await this.getAdminStats();
-            const proxyStats = this.proxyPool.getStats();
-            const protectedCount = await Protected.countDocuments();
+            const target = match[1].trim();
+            const points = parseInt(match[2].trim());
 
-            const adminMessage = `👑 **Admin Panel v9.0**
+            if (isNaN(points) || points < 1) {
+                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /addpoints @username 5');
+                return;
+            }
 
-📊 **Stats:**
-• Users: ${stats.totalUsers}
-• Reports: ${stats.totalReports}
-• Queue: ${this.queue.length}
-• Processing: ${this.processing.size}
-• Protected: ${protectedCount}
+            try {
+                const user = await User.findOne({ username: target.replace('@', '') });
+                if (!user) {
+                    await this.bot.sendMessage(chatId, '❌ User not found.');
+                    return;
+                }
 
-🌐 **Proxy Pool:**
-• Available: ${proxyStats.available}
-• Failed: ${proxyStats.failed}
-• Total: ${proxyStats.total}
+                user.points += points;
+                await user.save();
 
-📈 **Success Rate:** 99.99%
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ **Points Added!**
 
-🔧 **Commands:**
-• /broadcast - Send message
-• /stats - Detailed stats
-• /reports - View reports
-• /users - View users
-• /protect - Protect target
-• /unprotect - Unprotect target
-• /banuser - Ban user
-• /unbanuser - Unban user`;
+👤 User: @${user.username}
+⭐ Points Added: ${points}
+📊 Total Points: ${user.points}
 
-            await this.bot.sendMessage(chatId, adminMessage, { parse_mode: 'Markdown' });
+🔗 Referral Link: https://t.me/${await getBotUsername(this.bot)}?start=${user.referral_code}`,
+                    { parse_mode: 'Markdown' }
+                );
+
+                // Notify user
+                try {
+                    await this.bot.sendMessage(
+                        parseInt(user.telegram_id),
+                        `🎉 **You received ${points} points from admin!**
+
+📊 Total Points: ${user.points}
+🔥 Keep referring to earn more!`,
+                        { parse_mode: 'Markdown' }
+                    );
+                } catch (e) {}
+
+            } catch (error) {
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+        });
+
+        // ============================================
+        // ADMIN: SET POINTS
+        // ============================================
+
+        this.bot.onText(/\/setpoints (.+) (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const target = match[1].trim();
+            const points = parseInt(match[2].trim());
+
+            if (isNaN(points) || points < 0) {
+                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /setpoints @username 10');
+                return;
+            }
+
+            try {
+                const user = await User.findOne({ username: target.replace('@', '') });
+                if (!user) {
+                    await this.bot.sendMessage(chatId, '❌ User not found.');
+                    return;
+                }
+
+                user.points = points;
+                await user.save();
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ **Points Set!**
+
+👤 User: @${user.username}
+⭐ Points Set: ${points}
+
+🔗 Referral Link: https://t.me/${await getBotUsername(this.bot)}?start=${user.referral_code}`,
+                    { parse_mode: 'Markdown' }
+                );
+
+            } catch (error) {
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
         });
 
         // ============================================
@@ -1075,7 +958,8 @@ Join for updates and support!`,
 🛡️ Target: ${target}
 📋 Type: ${targetType}
 
-This target is now protected from ban reports.`,
+This target is now protected from ban reports.
+⚠️ Users will see: "This target is protected by RTF"`,
                     { parse_mode: 'Markdown' }
                 );
             } catch (error) {
@@ -1320,6 +1204,325 @@ Type /cancel to cancel.`
             }
 
             await this.bot.sendMessage(chatId, userMessage, { parse_mode: 'Markdown' });
+        });
+
+        // ============================================
+        // START BAN BUTTON
+        // ============================================
+
+        this.bot.onText(/🔥 Start Ban/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            try {
+                const isSubscribed = await this.checkSubscription(userId);
+                if (!isSubscribed) {
+                    await this.bot.sendMessage(
+                        chatId,
+                        `❌ **CHANNEL VERIFICATION REQUIRED**
+
+Please join: ${CONFIG.channelLink}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+
+                const user = await User.findOne({ telegram_id: userId.toString() });
+                if (!user) {
+                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
+                    return;
+                }
+
+                const points = user.points || 0;
+                const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
+                const reportsUsed = user.reports_used || 0;
+                const remaining = reportsAvailable - reportsUsed;
+
+                if (remaining <= 0) {
+                    await this.bot.sendMessage(
+                        chatId,
+                        `❌ **Insufficient Reports!**
+
+Need ${CONFIG.refersForReport} points for 1 report.
+Current points: ${points}
+Earn more: https://t.me/${await getBotUsername(this.bot)}?start=${userId}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+
+                this.conversations.set(userId, { step: 'target' });
+                await this.bot.sendMessage(
+                    chatId,
+                    `🎯 **Enter Target**
+
+Send the @username or link to ban.
+
+Supported formats:
+• @username (Account)
+• t.me/username (Channel)
+• t.me/joinchat/xxx (Group)
+
+⚠️ 150 reports will be sent for 99.99% ban chance!`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [['❌ Cancel']],
+                            resize_keyboard: true,
+                            one_time_keyboard: true
+                        }
+                    }
+                );
+
+            } catch (error) {
+                console.error('❌ Start ban error:', error);
+                await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
+            }
+        });
+
+        // ============================================
+        // MY STATS BUTTON
+        // ============================================
+
+        this.bot.onText(/📊 My Stats/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            try {
+                const isSubscribed = await this.checkSubscription(userId);
+                if (!isSubscribed) {
+                    await this.bot.sendMessage(
+                        chatId,
+                        `❌ Please join: ${CONFIG.channelLink}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+
+                const user = await User.findOne({ telegram_id: userId.toString() });
+                if (!user) {
+                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
+                    return;
+                }
+
+                const points = user.points || 0;
+                const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
+                const reportsUsed = user.reports_used || 0;
+                const remaining = reportsAvailable - reportsUsed;
+
+                const statsMessage = `📊 **Your Stats**
+
+👤 User: @${user.username || 'unknown'}
+⭐ Points: ${points}
+🔗 Referrals: ${user.referrals || 0}
+📨 Reports Available: ${Math.max(0, remaining)}
+📤 Reports Used: ${reportsUsed}
+📈 Success Rate: ${reportsUsed > 0 ? Math.round((user.reports_success / reportsUsed) * 100) : 0}%
+
+📅 Joined: ${moment(user.created_at).format('DD MMM YYYY')}
+🔄 Last Active: ${moment(user.last_active).fromNow()}
+
+🔗 Referral Link:
+https://t.me/${await getBotUsername(this.bot)}?start=${user.referral_code}`;
+
+                await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+
+            } catch (error) {
+                console.error('❌ Stats error:', error);
+                await this.bot.sendMessage(chatId, '❌ Error.');
+            }
+        });
+
+        // ============================================
+        // REFER & EARN BUTTON
+        // ============================================
+
+        this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            try {
+                const isSubscribed = await this.checkSubscription(userId);
+                if (!isSubscribed) {
+                    await this.bot.sendMessage(
+                        chatId,
+                        `❌ Please join: ${CONFIG.channelLink}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+
+                const user = await User.findOne({ telegram_id: userId.toString() });
+                if (!user) {
+                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
+                    return;
+                }
+
+                const points = user.points || 0;
+                const nextReport = CONFIG.refersForReport - (points % CONFIG.refersForReport);
+                const botUsername = await getBotUsername(this.bot);
+
+                const referMessage = `🔗 **Refer & Earn Points!**
+
+📊 Your Stats:
+• Points: ${points} ⭐
+• Next Report in: ${nextReport} points
+
+🎯 How it works:
+1. Share your referral link
+2. Each new user = 1 point
+3. ${CONFIG.refersForReport} points = 1 report
+4. 150 reports = 99.99% ban
+
+🔗 Your Referral Link:
+https://t.me/${botUsername}?start=${user.referral_code}`;
+
+                await this.bot.sendMessage(chatId, referMessage, { parse_mode: 'Markdown' });
+
+            } catch (error) {
+                console.error('❌ Refer error:', error);
+                await this.bot.sendMessage(chatId, '❌ Error.');
+            }
+        });
+
+        // ============================================
+        // CHANNEL BUTTON
+        // ============================================
+
+        this.bot.onText(/📢 Channel/, async (msg) => {
+            const chatId = msg.chat.id;
+            await this.bot.sendMessage(
+                chatId,
+                `📢 **Official Channel**
+
+${CONFIG.channelLink}
+
+Join for updates and support!`,
+                { parse_mode: 'Markdown' }
+            );
+        });
+
+        // ============================================
+        // EVIDENCE GUIDE
+        // ============================================
+
+        this.bot.onText(/📁 Evidence Guide/, async (msg) => {
+            const chatId = msg.chat.id;
+            const guideMessage = `📁 **Evidence Guide**
+
+📸 **Screenshots:**
+• Chat logs showing violations
+• User profile with violations
+• Group/Channel content
+
+🎥 **Videos:**
+• Screen recordings
+• Evidence in action
+
+📄 **Documents:**
+• Text files with details
+• PDF reports
+• Transaction records
+
+🔗 **Links:**
+• URLs to violations
+• Channel/Group links
+• Screenshot uploads
+
+💡 **Tips:**
+• Clear evidence = 99.99% ban
+• Multiple sources = Higher success
+• Specific details = Faster action
+
+📤 **Just upload files when asked!**`;
+
+            await this.bot.sendMessage(chatId, guideMessage, { parse_mode: 'Markdown' });
+        });
+
+        // ============================================
+        // HELP
+        // ============================================
+
+        this.bot.onText(/ℹ️ Help/, async (msg) => {
+            const chatId = msg.chat.id;
+            const helpMessage = `ℹ️ **Help & Guide**
+
+🔥 **How to Ban:**
+1. Click "Start Ban"
+2. Enter @username
+3. Upload evidence (optional)
+4. Bot sends 150 reports
+5. 99.99% ban chance!
+
+📊 **Points System:**
+• ${CONFIG.refersForReport} points = 1 report
+• Refer others to earn points
+
+📤 **Evidence Support:**
+• Photos (JPG, PNG, GIF)
+• Videos (MP4)
+• Documents (PDF, TXT)
+• Links (URL)
+
+⚠️ **Success Factors:**
+• Real violation
+• Strong evidence
+• 150 reports
+• 99.99% success!
+
+🛡️ **Rate Limits:**
+• ${CONFIG.rateLimitPerUser} reports/minute
+• Protect against abuse`;
+
+            await this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+        });
+
+        // ============================================
+        // ADMIN PANEL
+        // ============================================
+
+        this.bot.onText(/👑 Admin Panel/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const stats = await this.getAdminStats();
+            const proxyStats = this.proxyPool.getStats();
+            const protectedCount = await Protected.countDocuments();
+
+            const adminMessage = `👑 **Admin Panel v10.0**
+
+📊 **Stats:**
+• Users: ${stats.totalUsers}
+• Reports: ${stats.totalReports}
+• Queue: ${this.queue.length}
+• Processing: ${this.processing.size}
+• Protected: ${protectedCount}
+
+🌐 **Proxy Pool:**
+• Available: ${proxyStats.available}
+• Failed: ${proxyStats.failed}
+• Total: ${proxyStats.total}
+
+📈 **Success Rate:** 99.99%
+
+🔧 **Commands:**
+• /addpoints @username 5 - Add points
+• /setpoints @username 10 - Set points
+• /protect @username - Protect target
+• /unprotect @username - Remove protection
+• /banuser @username - Ban user
+• /unbanuser @username - Unban user
+• /broadcast - Send message
+• /stats - Detailed stats
+• /reports - View reports
+• /users - View users`;
+
+            await this.bot.sendMessage(chatId, adminMessage, { parse_mode: 'Markdown' });
         });
 
         // ============================================
@@ -1954,7 +2157,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '9.0.0',
+        version: '10.0.0',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
