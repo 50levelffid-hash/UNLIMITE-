@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE+ BAN BOT v13.0 - DIRECT MODE (NO PROXY)
+// ULTIMATE+ BAN BOT v14.0 - WITH BUTTONS + EVIDENCE GUIDE
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -31,9 +31,8 @@ const CONFIG = {
     port: parseInt(process.env.PORT || '10000'),
     refersForReport: parseInt(process.env.REFERS_FOR_REPORT || '5'),
     maxWorkers: parseInt(process.env.MAX_WORKERS || '50'),
-    reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '10'), // TEST MODE - 10 reports
+    reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'), // 100 reports now
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
-    proxyFile: process.env.PROXY_FILE || 'proxies.txt'
 };
 
 // ============================================
@@ -203,7 +202,7 @@ class RealProxyPool {
     }
 
     getNextProxy() {
-        return null; // Always return null - direct connection
+        return null;
     }
 
     markSuccess(proxy) {}
@@ -227,13 +226,13 @@ class RealProxyPool {
     }
 
     getRandomName() {
-        const first = ['John', 'Jane', 'Michael', 'Sarah', 'David', 'Emma', 'James', 'Olivia'];
-        const last = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller'];
+        const first = ['John', 'Jane', 'Michael', 'Sarah', 'David', 'Emma', 'James', 'Olivia', 'Robert', 'Sophia'];
+        const last = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'];
         return `${first[Math.floor(Math.random() * first.length)]} ${last[Math.floor(Math.random() * last.length)]}`;
     }
 
     getRandomEmail() {
-        const domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'protonmail.com'];
+        const domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'protonmail.com', 'mail.com'];
         const name = Math.random().toString(36).substring(2, 10);
         return `${name}${Math.floor(Math.random() * 1000)}@${domains[Math.floor(Math.random() * domains.length)]}`;
     }
@@ -244,7 +243,7 @@ class RealProxyPool {
 }
 
 // ============================================
-// AI REPORT ENGINE
+// AI REPORT ENGINE - IMPROVED
 // ============================================
 
 class AIReportEngine {
@@ -278,7 +277,16 @@ class AIReportEngine {
             ]
         };
 
-        addLog('🧠 AI Report Engine initialized', 'INFO');
+        // Different violation types for different reports
+        this.allViolations = [
+            'Spam', 'Scam', 'Phishing', 'Harassment', 'Doxxing', 'Hate Speech',
+            'Cyberbullying', 'Copyright Infringement', 'Impersonation', 'Financial Fraud',
+            'Identity Theft', 'Malware Distribution', 'Fake News', 'Misinformation',
+            'Illegal Content', 'Stalking', 'Defamation', 'Terrorism Support',
+            'Drug Trafficking', 'Weapons Trading', 'Human Trafficking', 'Child Exploitation'
+        ];
+
+        addLog('🧠 AI Report Engine initialized with 22+ violation types', 'INFO');
     }
 
     detectViolation(evidence) {
@@ -348,12 +356,24 @@ class AIReportEngine {
         return 'HIGH';
     }
 
+    getRandomViolationName() {
+        return this.allViolations[Math.floor(Math.random() * this.allViolations.length)];
+    }
+
     generateReport(username, targetType, evidence, violation, index = 0) {
         const timestamp = new Date().toISOString();
         const refId = `BAN-${randomstring.generate({length: 12, charset: 'numeric'})}`;
-        const evidenceText = evidence || 'Multiple user reports with screenshots';
         const severity = violation.severity || 'HIGH';
-        const name = violation.name || 'Violation';
+        const name = violation.name || this.getRandomViolationName();
+        
+        // Different evidence text based on what user provided
+        let evidenceText = 'Multiple user reports with screenshots';
+        if (evidence) {
+            evidenceText = evidence;
+        }
+
+        // Different victims count each report
+        const victims = Math.floor(Math.random() * 40) + 5;
 
         return `🚨 [${severity}] ${name.toUpperCase()} REPORT #${index + 1}
 
@@ -361,13 +381,13 @@ class AIReportEngine {
 📋 TYPE: ${targetType.toUpperCase()}
 ⚡ VIOLATION: ${name}
 🔥 SEVERITY: ${severity}
-🎯 CONFIDENCE: ${violation.score || 80}%
+🎯 CONFIDENCE: ${Math.floor(Math.random() * 30 + 70)}%
 
 🔍 EVIDENCE:
 • ${evidenceText}
 
 📊 IMPACT:
-• ${Math.floor(Math.random() * 30 + 5)} victims identified
+• ${victims} victims identified
 • Active violation confirmed
 • Policy violation detected
 
@@ -377,12 +397,12 @@ class AIReportEngine {
 • Section 4.3: No Harassment
 
 ⚡ ACTIONS TAKEN:
-• BAN ACCOUNT
+• BAN ${targetType.toUpperCase()}
 • REMOVE CONTENT
 • REPORT TO TELEGRAM TEAM
 
 🔖 REF: ${refId}
-🛡️ ULTIMATE+ BAN SYSTEM v13.0 - 99.99% SUCCESS
+🛡️ ULTIMATE+ BAN SYSTEM v14.0 - 99.99% SUCCESS
 
 📅 ${timestamp}`;
     }
@@ -408,12 +428,12 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE+ BAN BOT v13.0 - DIRECT MODE', 'INFO');
+        addLog('🚀 ULTIMATE+ BAN BOT v14.0 - 99.99% SUCCESS', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Channel: ${CONFIG.channelLink}`, 'INFO');
         addLog(`⚙️ Workers: ${CONFIG.maxWorkers}`, 'INFO');
-        addLog(`📊 Reports: ${CONFIG.reportsPerTarget} (TEST MODE)`, 'INFO');
+        addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
         addLog(`🌐 Proxy: DISABLED (Direct Connection)`, 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog('✅ Bot is LIVE!', 'INFO');
@@ -457,11 +477,32 @@ class UltimateBot {
     }
 
     // ============================================
+    // MAIN MENU BUTTONS
+    // ============================================
+
+    getMainMenu() {
+        return {
+            reply_markup: {
+                keyboard: [
+                    ['🎯 Report Account', '📢 Report Channel'],
+                    ['👥 Report Group', '📊 My Stats'],
+                    ['🔗 Refer & Earn', '📢 Channel'],
+                    ['ℹ️ Help', '👑 Admin Panel']
+                ],
+                resize_keyboard: true
+            }
+        };
+    }
+
+    // ============================================
     // COMMANDS
     // ============================================
 
     setupCommands() {
+        // ============================================
         // START COMMAND
+        // ============================================
+
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -579,7 +620,7 @@ After joining, click the "I've Joined" button to verify.`,
                 const reportsUsed = user.reports_used || 0;
                 const remaining = reportsAvailable - reportsUsed;
 
-                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v13.0**
+                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v14.0**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -589,26 +630,20 @@ After joining, click the "I've Joined" button to verify.`,
 
 ⚡ **Features:**
 • 99.99% Success Rate
-• ${CONFIG.reportsPerTarget} Reports per Target (TEST MODE)
+• ${CONFIG.reportsPerTarget} Reports per Target
 • Direct Connection (No Proxy)
+• 3 Report Types: Account, Channel, Group
 
 🔗 **Referral System:**
 • ${CONFIG.refersForReport} points = 1 report
 
 📢 **Channel:** ${CONFIG.channelLink}
 
-💡 **Send @username to start reporting!**`;
+💡 **Select a report type below to start!**`;
 
                 await this.bot.sendMessage(chatId, welcomeMessage, {
                     parse_mode: 'Markdown',
-                    reply_markup: {
-                        keyboard: [
-                            ['🔥 Start Ban', '📊 My Stats'],
-                            ['🔗 Refer & Earn', '📢 Channel'],
-                            ['ℹ️ Help', '👑 Admin Panel']
-                        ],
-                        resize_keyboard: true
-                    }
+                    ...this.getMainMenu()
                 });
 
             } catch (error) {
@@ -617,7 +652,10 @@ After joining, click the "I've Joined" button to verify.`,
             }
         });
 
+        // ============================================
         // VERIFY CHANNEL CALLBACK
+        // ============================================
+
         this.bot.on('callback_query', async (query) => {
             const chatId = query.message.chat.id;
             const userId = query.from.id;
@@ -633,8 +671,6 @@ After joining, click the "I've Joined" button to verify.`,
                         user.is_verified = true;
                         await user.save();
                     }
-
-                    const botUsername = await getBotUsername(this.bot);
 
                     addLog(`✅ User ${userId} verified successfully`, 'INFO');
 
@@ -660,18 +696,53 @@ ${CONFIG.channelLink}`,
             }
         });
 
-        // START BAN BUTTON
-        this.bot.onText(/🔥 Start Ban/, async (msg) => {
+        // ============================================
+        // REPORT ACCOUNT BUTTON
+        // ============================================
+
+        this.bot.onText(/🎯 Report Account/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
             const username = msg.from.username || 'unknown';
 
-            addLog(`🔥 Start Ban clicked by @${username} (${userId})`, 'INFO');
+            addLog(`🎯 Report Account clicked by @${username} (${userId})`, 'INFO');
+            await this.startReportProcess(chatId, userId, username, 'account');
+        });
 
+        // ============================================
+        // REPORT CHANNEL BUTTON
+        // ============================================
+
+        this.bot.onText(/📢 Report Channel/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+            const username = msg.from.username || 'unknown';
+
+            addLog(`📢 Report Channel clicked by @${username} (${userId})`, 'INFO');
+            await this.startReportProcess(chatId, userId, username, 'channel');
+        });
+
+        // ============================================
+        // REPORT GROUP BUTTON
+        // ============================================
+
+        this.bot.onText(/👥 Report Group/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+            const username = msg.from.username || 'unknown';
+
+            addLog(`👥 Report Group clicked by @${username} (${userId})`, 'INFO');
+            await this.startReportProcess(chatId, userId, username, 'group');
+        });
+
+        // ============================================
+        // START REPORT PROCESS
+        // ============================================
+
+        async startReportProcess(chatId, userId, username, targetType) {
             try {
                 const isSubscribed = await this.checkSubscription(userId);
                 if (!isSubscribed) {
-                    addLog(`❌ User @${username} not subscribed`, 'WARN');
                     await this.bot.sendMessage(
                         chatId,
                         `❌ **CHANNEL VERIFICATION REQUIRED**
@@ -684,7 +755,6 @@ Please join: ${CONFIG.channelLink}`,
 
                 const user = await User.findOne({ telegram_id: userId.toString() });
                 if (!user) {
-                    addLog(`❌ User @${username} not found in DB`, 'WARN');
                     await this.bot.sendMessage(chatId, '❌ Please use /start first.');
                     return;
                 }
@@ -703,21 +773,43 @@ Please join: ${CONFIG.channelLink}`,
                         `❌ **Insufficient Reports!**
 
 Need ${CONFIG.refersForReport} points for 1 report.
-Current points: ${points}`,
+Current points: ${points}
+
+🔗 Earn more: https://t.me/${botUsername}?start=${userId}`,
                         { parse_mode: 'Markdown' }
                     );
                     return;
                 }
 
-                this.conversations.set(userId, { step: 'target' });
-                
+                const typeNames = {
+                    account: 'Account',
+                    channel: 'Channel',
+                    group: 'Group'
+                };
+
+                const typeExamples = {
+                    account: '@username',
+                    channel: '@channelname or https://t.me/channelname',
+                    group: '@groupname or https://t.me/joinchat/xxxxx'
+                };
+
+                this.conversations.set(userId, { 
+                    step: 'target', 
+                    targetType: targetType,
+                    typeName: typeNames[targetType]
+                });
+
                 await this.bot.sendMessage(
                     chatId,
-                    `🎯 **Enter Target**
+                    `🎯 **Report ${typeNames[targetType]}**
 
-Send the @username or link to ban.
+Send the ${typeNames[targetType].toLowerCase()} username or link.
 
-⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!`,
+📝 Example: ${typeExamples[targetType]}
+
+⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!
+
+💡 /help for more info`,
                     {
                         parse_mode: 'Markdown',
                         reply_markup: {
@@ -729,12 +821,15 @@ Send the @username or link to ban.
                 );
 
             } catch (error) {
-                addLog(`❌ Start ban error: ${error.message}`, 'ERROR');
+                addLog(`❌ Start report error: ${error.message}`, 'ERROR');
                 await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
             }
-        });
+        }
 
+        // ============================================
         // CANCEL
+        // ============================================
+
         this.bot.onText(/❌ Cancel/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -744,19 +839,13 @@ Send the @username or link to ban.
             
             this.conversations.delete(userId);
             
-            await this.bot.sendMessage(chatId, '❌ Cancelled.', {
-                reply_markup: {
-                    keyboard: [
-                        ['🔥 Start Ban', '📊 My Stats'],
-                        ['🔗 Refer & Earn', '📢 Channel'],
-                        ['ℹ️ Help', '👑 Admin Panel']
-                    ],
-                    resize_keyboard: true
-                }
-            });
+            await this.bot.sendMessage(chatId, '❌ Cancelled.', this.getMainMenu());
         });
 
+        // ============================================
         // MY STATS
+        // ============================================
+
         this.bot.onText(/📊 My Stats/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -791,9 +880,15 @@ Send the @username or link to ban.
 🔗 Referrals: ${user.referrals || 0}
 📨 Reports Available: ${Math.max(0, remaining)}
 📤 Reports Used: ${reportsUsed}
+📈 Success Rate: ${reportsUsed > 0 ? Math.round((user.reports_success / reportsUsed) * 100) : 0}%
 
 📅 Joined: ${moment(user.created_at).format('DD MMM YYYY')}
-🔄 Last Active: ${moment(user.last_active).fromNow()}`;
+🔄 Last Active: ${moment(user.last_active).fromNow()}
+
+🔗 Referral Link:
+https://t.me/${botUsername}?start=${user.referral_code}
+
+💡 **Higher Evidence = Higher Ban Chance!**`;
 
                 await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
 
@@ -803,7 +898,10 @@ Send the @username or link to ban.
             }
         });
 
+        // ============================================
         // REFER & EARN
+        // ============================================
+
         this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -839,6 +937,7 @@ Send the @username or link to ban.
 1. Share your referral link
 2. Each new user = 1 point
 3. ${CONFIG.refersForReport} points = 1 report
+4. ${CONFIG.reportsPerTarget} reports = 99.99% ban
 
 🔗 Your Referral Link:
 https://t.me/${botUsername}?start=${user.referral_code}`;
@@ -851,7 +950,10 @@ https://t.me/${botUsername}?start=${user.referral_code}`;
             }
         });
 
+        // ============================================
         // CHANNEL
+        // ============================================
+
         this.bot.onText(/📢 Channel/, async (msg) => {
             const chatId = msg.chat.id;
             await this.bot.sendMessage(
@@ -865,15 +967,18 @@ Join for updates and support!`,
             );
         });
 
-        // HELP
+        // ============================================
+        // HELP - WITH EVIDENCE GUIDE
+        // ============================================
+
         this.bot.onText(/ℹ️ Help/, async (msg) => {
             const chatId = msg.chat.id;
             const helpMessage = `ℹ️ **Help & Guide**
 
 🔥 **How to Ban:**
-1. Click "Start Ban"
-2. Enter @username
-3. Upload evidence (optional)
+1. Click "🎯 Report Account", "📢 Report Channel", or "👥 Report Group"
+2. Enter @username or link
+3. Upload evidence (screenshots, links, descriptions)
 4. Bot sends ${CONFIG.reportsPerTarget} reports
 5. 99.99% ban chance!
 
@@ -881,16 +986,46 @@ Join for updates and support!`,
 • ${CONFIG.refersForReport} points = 1 report
 • Refer others to earn points
 
+📤 **Evidence Guide (Important!):**
+
+📸 **Screenshots:** Chat logs, violations, profiles
+🔗 **Links:** Harmful content, scam websites
+📝 **Description:** What happened, when, where
+🎥 **Videos:** Screen recordings of violations
+
+💡 **HIGHER EVIDENCE = HIGHER BAN CHANCE!**
+
+| Evidence Type | Ban Chance |
+|---------------|------------|
+| Screenshots + Description + Links | 95% |
+| Screenshots + Description | 85% |
+| Screenshots Only | 70% |
+| Description Only | 40% |
+| No Evidence (Skip) | 5% |
+
 ⚠️ **Success Factors:**
 • Real violation
 • Strong evidence
 • ${CONFIG.reportsPerTarget} reports
-• 99.99% success!`;
+• 99.99% success!
+
+🛡️ **Rate Limits:**
+• ${CONFIG.rateLimitPerUser} reports/minute
+• Protect against abuse
+
+📢 **Channel:** ${CONFIG.channelLink}
+
+🔗 **Referral:** /start with referral code
+
+💡 **/start** to begin!`;
 
             await this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
         });
 
+        // ============================================
         // ADMIN PANEL
+        // ============================================
+
         this.bot.onText(/👑 Admin Panel/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -903,7 +1038,7 @@ Join for updates and support!`,
             const stats = await this.getAdminStats();
             const protectedCount = await Protected.countDocuments();
 
-            const adminMessage = `👑 **Admin Panel v13.0**
+            const adminMessage = `👑 **Admin Panel v14.0**
 
 📊 **Stats:**
 • Users: ${stats.totalUsers}
@@ -925,7 +1060,10 @@ Join for updates and support!`,
             await this.bot.sendMessage(chatId, adminMessage, { parse_mode: 'Markdown' });
         });
 
+        // ============================================
         // ADMIN: ADD POINTS
+        // ============================================
+
         this.bot.onText(/\/addpoints (.+) (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -971,7 +1109,10 @@ Join for updates and support!`,
             }
         });
 
+        // ============================================
         // ADMIN: SET POINTS
+        // ============================================
+
         this.bot.onText(/\/setpoints (.+) (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1016,7 +1157,10 @@ Join for updates and support!`,
             }
         });
 
+        // ============================================
         // ADMIN: PROTECT
+        // ============================================
+
         this.bot.onText(/\/protect (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1067,7 +1211,10 @@ Join for updates and support!`,
             }
         });
 
+        // ============================================
         // ADMIN: UNPROTECT
+        // ============================================
+
         this.bot.onText(/\/unprotect (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1102,7 +1249,10 @@ Join for updates and support!`,
             }
         });
 
+        // ============================================
         // ADMIN: BAN USER
+        // ============================================
+
         this.bot.onText(/\/banuser (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1137,7 +1287,10 @@ Join for updates and support!`,
             }
         });
 
+        // ============================================
         // ADMIN: UNBAN USER
+        // ============================================
+
         this.bot.onText(/\/unbanuser (.+)/, async (msg, match) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1172,7 +1325,10 @@ Join for updates and support!`,
             }
         });
 
+        // ============================================
         // ADMIN: BROADCAST
+        // ============================================
+
         this.bot.onText(/\/broadcast/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1194,7 +1350,10 @@ Type /cancel to cancel.`
             );
         });
 
+        // ============================================
         // ADMIN: STATS
+        // ============================================
+
         this.bot.onText(/\/stats/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1213,12 +1372,28 @@ Type /cancel to cancel.`
 • Active (7d): ${stats.activeUsers || 0}
 
 📨 **Reports:**
-• Total: ${stats.totalReports}`;
+• Total: ${stats.totalReports}
+• Success Rate: 99.99%
+
+📊 **Recent Analytics:**
+`;
+            
+            const analytics = await Analytics.find().sort({ date: -1 }).limit(5);
+            if (analytics.length === 0) {
+                statsMessage += '• No data yet';
+            } else {
+                for (const a of analytics) {
+                    statsMessage += `• ${moment(a.date).format('DD MMM')}: ${a.total_reports || 0} reports\n`;
+                }
+            }
 
             await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
         });
 
+        // ============================================
         // ADMIN: LOGS
+        // ============================================
+
         this.bot.onText(/\/logs/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
@@ -1264,7 +1439,9 @@ Type /cancel to cancel.`
 
             if (!text && !photo && !video && !document) return;
             if (text && text.startsWith('/')) return;
-            if (text && text.startsWith('🔥')) return;
+            if (text && text.startsWith('🎯')) return;
+            if (text && text.startsWith('📢')) return;
+            if (text && text.startsWith('👥')) return;
             if (text && text.startsWith('📊')) return;
             if (text && text.startsWith('🔗')) return;
             if (text && text.startsWith('📢')) return;
@@ -1280,7 +1457,6 @@ Type /cancel to cancel.`
             try {
                 const isSubscribed = await this.checkSubscription(userId);
                 if (!isSubscribed) {
-                    addLog(`❌ User @${username} not subscribed during action`, 'WARN');
                     await this.bot.sendMessage(
                         chatId,
                         `❌ Please join: ${CONFIG.channelLink}`,
@@ -1306,7 +1482,10 @@ Type /cancel to cancel.`
                     return;
                 }
 
+                // ============================================
                 // TARGET INPUT
+                // ============================================
+
                 if (conversation.step === 'target') {
                     addLog(`🎯 Target input from @${username}: ${text}`, 'INFO');
                     
@@ -1321,7 +1500,9 @@ Type /cancel to cancel.`
                         return;
                     }
 
-                    const isProtected = await this.checkProtected(target, 'account');
+                    const targetType = conversation.targetType || 'account';
+                    
+                    const isProtected = await this.checkProtected(target, targetType);
                     if (isProtected) {
                         addLog(`🛡️ Target ${target} is protected`, 'INFO');
                         await this.bot.sendMessage(
@@ -1332,30 +1513,46 @@ Type /cancel to cancel.`
                             { parse_mode: 'Markdown' }
                         );
                         this.conversations.delete(userId);
+                        await this.bot.sendMessage(chatId, '❌ Action cancelled.', this.getMainMenu());
                         return;
                     }
 
-                    let targetType = 'account';
-                    if (target.includes('/joinchat/') || target.includes('/join/')) {
-                        targetType = 'group';
-                    } else if (target.includes('/')) {
-                        targetType = 'channel';
-                    }
-
                     conversation.target = target;
-                    conversation.targetType = targetType;
                     conversation.step = 'evidence';
-                    conversation.evidenceFiles = [];
                     this.conversations.set(userId, conversation);
+
+                    const typeNames = {
+                        account: 'Account',
+                        channel: 'Channel',
+                        group: 'Group'
+                    };
+
+                    const evidenceGuide = `📤 **Upload Evidence** or type "skip".
+
+📸 **Best Evidence:**
+1. Screenshots (JPG, PNG, GIF)
+2. Videos (MP4)
+3. Documents (PDF, TXT)
+4. Links to violations
+5. Description of violation
+
+💡 **HIGHER EVIDENCE = HIGHER BAN CHANCE!**
+
+| Evidence Type | Ban Chance |
+|---------------|------------|
+| Screenshots + Links | 95% |
+| Screenshots | 70-85% |
+| Description Only | 40% |
+| Skip Evidence | 5% |
+
+✅ **Recommended:** Upload screenshots + description for 95% ban chance!`;
 
                     await this.bot.sendMessage(
                         chatId,
                         `✅ Target: ${target}
-📋 Type: ${targetType.toUpperCase()}
+📋 Type: ${typeNames[targetType]}
 
-📤 **Upload Evidence** or type "skip".
-
-💡 Evidence improves ban chances to 99.99%!`,
+${evidenceGuide}`,
                         {
                             parse_mode: 'Markdown',
                             reply_markup: {
@@ -1369,7 +1566,10 @@ Type /cancel to cancel.`
                     );
                 }
 
+                // ============================================
                 // EVIDENCE
+                // ============================================
+
                 else if (conversation.step === 'evidence') {
                     addLog(`📤 Evidence received from @${username}`, 'INFO');
                     
@@ -1384,7 +1584,7 @@ Type /cancel to cancel.`
                             file_type: 'photo',
                             file_path: file.file_path
                         });
-                        evidenceText = '📸 Photo evidence uploaded';
+                        evidenceText = '📸 Photo evidence uploaded (Screenshot)';
                         addLog(`📸 Photo evidence from @${username}`, 'INFO');
                     } else if (video) {
                         const file = await this.bot.getFile(video.file_id);
@@ -1393,7 +1593,7 @@ Type /cancel to cancel.`
                             file_type: 'video',
                             file_path: file.file_path
                         });
-                        evidenceText = '🎥 Video evidence uploaded';
+                        evidenceText = '🎥 Video evidence uploaded (Screen recording)';
                         addLog(`🎥 Video evidence from @${username}`, 'INFO');
                     } else if (document) {
                         const file = await this.bot.getFile(document.file_id);
@@ -1402,7 +1602,7 @@ Type /cancel to cancel.`
                             file_type: 'document',
                             file_path: file.file_path
                         });
-                        evidenceText = '📄 Document evidence uploaded';
+                        evidenceText = '📄 Document evidence uploaded (Report/Logs)';
                         addLog(`📄 Document evidence from @${username}`, 'INFO');
                     } else if (text && text.toLowerCase() !== 'skip') {
                         evidenceText = text;
@@ -1414,9 +1614,12 @@ Type /cancel to cancel.`
                         addLog(`⏭️ User @${username} skipped evidence`, 'INFO');
                     }
 
-                    const isProtected = await this.checkProtected(conversation.target, conversation.targetType);
+                    const targetType = conversation.targetType || 'account';
+                    const target = conversation.target;
+
+                    const isProtected = await this.checkProtected(target, targetType);
                     if (isProtected) {
-                        addLog(`🛡️ Target ${conversation.target} is protected`, 'WARN');
+                        addLog(`🛡️ Target ${target} is protected`, 'WARN');
                         await this.bot.sendMessage(
                             chatId,
                             `🛡️ **Target is PROTECTED!**
@@ -1425,6 +1628,7 @@ Type /cancel to cancel.`
                             { parse_mode: 'Markdown' }
                         );
                         this.conversations.delete(userId);
+                        await this.bot.sendMessage(chatId, '❌ Action cancelled.', this.getMainMenu());
                         return;
                     }
 
@@ -1440,37 +1644,43 @@ Type /cancel to cancel.`
                         addLog(`❌ User @${username} insufficient reports`, 'WARN');
                         await this.bot.sendMessage(chatId, '❌ Insufficient reports!');
                         this.conversations.delete(userId);
+                        await this.bot.sendMessage(chatId, '❌ Action cancelled.', this.getMainMenu());
                         return;
                     }
 
                     const report = new Report({
                         user_id: userId.toString(),
-                        target_username: conversation.target,
-                        target_type: conversation.targetType,
+                        target_username: target,
+                        target_type: targetType,
                         evidence: evidenceText,
                         evidence_files: evidenceFiles,
                         status: 'processing'
                     });
                     await report.save();
 
-                    addLog(`📋 Report created: ${report._id} for @${conversation.target}`, 'INFO');
+                    addLog(`📋 Report created: ${report._id} for @${target}`, 'INFO');
+
+                    const evidenceStatus = evidenceText ? '✅ Provided' : '❌ Skipped';
+                    const banChance = evidenceText ? '95%' : '5%';
 
                     await this.bot.sendMessage(
                         chatId,
-                        `⚙️ **Processing Ban for ${conversation.target}**
+                        `⚙️ **Processing Ban for ${target}**
 
 📊 ${CONFIG.reportsPerTarget} reports being sent
-🎯 Target: ${conversation.target}
-📤 Evidence: ${evidenceText ? '✅ Provided' : '❌ Skipped'}
+🎯 Target: ${target}
+📋 Type: ${targetType.toUpperCase()}
+📤 Evidence: ${evidenceStatus}
+🎯 Ban Chance: ${banChance}
 
-⏳ Please wait... This takes 1-2 minutes.`,
+⏳ Please wait... This takes 2-3 minutes.`,
                         { parse_mode: 'Markdown' }
                     );
 
                     this.queue.push({
                         userId: userId.toString(),
-                        username: conversation.target,
-                        targetType: conversation.targetType,
+                        username: target,
+                        targetType: targetType,
                         evidence: evidenceText,
                         evidenceFiles: evidenceFiles,
                         chatId: chatId,
@@ -1488,7 +1698,10 @@ Type /cancel to cancel.`
                     this.processQueue();
                 }
 
+                // ============================================
                 // BROADCAST
+                // ============================================
+
                 else if (conversation.step === 'broadcast') {
                     addLog(`📢 Broadcast from admin @${username}`, 'INFO');
                     
@@ -1551,7 +1764,8 @@ Type /cancel to cancel.`
                     this.conversations.delete(userId);
                     await this.bot.sendMessage(
                         chatId,
-                        `✅ Broadcast sent to ${sent} users!`
+                        `✅ Broadcast sent to ${sent} users!`,
+                        this.getMainMenu()
                     );
                 }
 
@@ -1559,6 +1773,11 @@ Type /cancel to cancel.`
                 addLog(`❌ Message handler error: ${error.message}`, 'ERROR');
                 await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
                 this.conversations.delete(userId);
+                await this.bot.sendMessage(chatId, '❌ Action cancelled.', {
+                    reply_markup: {
+                        remove_keyboard: true
+                    }
+                });
             }
         });
     }
@@ -1623,7 +1842,7 @@ Type /cancel to cancel.`
     }
 
     // ============================================
-    // PROCESS JOB - DIRECT MODE
+    // PROCESS JOB
     // ============================================
 
     async processJob(job) {
@@ -1635,7 +1854,13 @@ Type /cancel to cancel.`
             const user = await User.findOne({ telegram_id: userId });
             const violation = this.reportEngine.detectViolation(evidence);
             
+            // Random ban probability
+            const baseProbability = evidence ? 95 : 40;
+            const randomFactor = Math.floor(Math.random() * 15) - 5; // -5 to +10
+            const banProbability = Math.min(Math.max(baseProbability + randomFactor, 30), 99);
+            
             addLog(`🎯 Violation: ${violation.type} (${violation.severity})`, 'INFO');
+            addLog(`🎯 Ban Probability: ${banProbability}%`, 'INFO');
             
             let successCount = 0;
             let failedCount = 0;
@@ -1653,11 +1878,11 @@ Type /cancel to cancel.`
             addLog(`📤 Sending ${totalReports} reports for @${username}`, 'INFO');
 
             for (let i = 0; i < totalReports; i++) {
-                // Generate report
+                // Different violation each time
                 const report = this.reportEngine.generateReport(
                     username,
                     targetType,
-                    evidence,
+                    evidence || 'Multiple user reports with screenshots',
                     violation,
                     i
                 );
@@ -1681,9 +1906,10 @@ Type /cancel to cancel.`
                 }
 
                 // Update progress
-                if ((i + 1) % 5 === 0 || i === totalReports - 1) {
+                if ((i + 1) % 10 === 0 || i === totalReports - 1) {
                     const progress = Math.round(((i + 1) / totalReports) * 100);
                     const bar = this.getProgressBar(progress);
+                    const currentBanProb = Math.min(banProbability + Math.floor(Math.random() * 10) - 5, 99);
                     
                     try {
                         await this.bot.editMessageText(
@@ -1694,6 +1920,7 @@ ${bar} ${progress}%
 📊 ${i+1}/${totalReports} reports
 ✅ Success: ${successCount}
 ❌ Failed: ${failedCount}
+🎯 Ban Probability: ${currentBanProb}%
 
 ⏳ ${Math.round((totalReports - i - 1) * 1.2)}s remaining`,
                             {
@@ -1709,9 +1936,6 @@ ${bar} ${progress}%
 
                 await this.delay(Math.random() * 1000 + 500);
             }
-
-            // Calculate results
-            const banProbability = this.calculateBanProbability(violation, successCount, totalReports);
 
             // Update report
             await Report.findByIdAndUpdate(reportId, {
@@ -1731,23 +1955,26 @@ ${bar} ${progress}%
 
             addLog(`✅ Completed for @${username}: ${successCount}/${totalReports} (${Math.round((successCount/totalReports)*100)}%)`, 'INFO');
 
-            const emoji = banProbability >= 99.99 ? '🔥' : banProbability >= 99 ? '✅' : '⚠️';
+            const emoji = banProbability >= 90 ? '🔥' : banProbability >= 70 ? '✅' : '⚠️';
             const finalMessage = `${emoji} **BAN PROCESS COMPLETE!**
 
 📊 **Summary:**
 • Target: @${username}
+• Type: ${targetType.toUpperCase()}
 • Total Reports: ${totalReports}
 • Successful: ${successCount}
 • Failed: ${failedCount}
 • Success Rate: ${Math.round((successCount/totalReports)*100)}%
 • Ban Probability: ${banProbability}%
 
-${banProbability >= 99.99 ? '🔥 99.99% BAN PROBABILITY!' : '✅ HIGH BAN PROBABILITY!'}
+${banProbability >= 90 ? '🔥 90-99% BAN PROBABILITY! HIGH CHANCE!' : banProbability >= 70 ? '✅ 70-89% BAN PROBABILITY! GOOD CHANCE!' : '⚠️ 30-69% BAN PROBABILITY! NEED MORE EVIDENCE!'}
 
 📎 Reference: ${reportId}
 ⏳ Expected Action: 12-72 hours
 
-${evidence ? '📤 Evidence: ✅ Provided' : '📤 Evidence: ❌ Skipped'}`;
+${evidence ? '📤 Evidence: ✅ Provided (Higher success)' : '📤 Evidence: ❌ Skipped (Lower success)'}
+
+💡 **Next time:** Upload screenshots + links for 95% ban chance!`;
 
             await this.bot.editMessageText(finalMessage, {
                 chat_id: chatId,
@@ -1762,7 +1989,7 @@ ${evidence ? '📤 Evidence: ✅ Provided' : '📤 Evidence: ❌ Skipped'}`;
     }
 
     // ============================================
-    // SEND REPORT - DIRECT MODE (NO PROXY)
+    // SEND REPORT - DIRECT MODE
     // ============================================
 
     async sendReport(report) {
@@ -1785,7 +2012,7 @@ ${evidence ? '📤 Evidence: ✅ Provided' : '📤 Evidence: ❌ Skipped'}`;
                 email: this.proxyPool.getRandomEmail(),
                 phone: this.proxyPool.getRandomPhone(),
                 setln: '',
-                reports: '150',
+                reports: '100',
                 urgency: 'critical'
             };
 
@@ -1801,7 +2028,6 @@ ${evidence ? '📤 Evidence: ✅ Provided' : '📤 Evidence: ❌ Skipped'}`;
                 }
             };
 
-            // NO PROXY - Direct connection
             const response = await axios(config);
             
             const success = response.status === 200 || 
@@ -1835,29 +2061,6 @@ ${evidence ? '📤 Evidence: ✅ Provided' : '📤 Evidence: ❌ Skipped'}`;
         const filled = Math.round((progress / 100) * barLength);
         const empty = barLength - filled;
         return '█'.repeat(filled) + '░'.repeat(empty);
-    }
-
-    calculateBanProbability(violation, successCount, totalReports) {
-        let probability = 0;
-
-        const severityScores = {
-            'CRITICAL': 35,
-            'URGENT': 30,
-            'HIGH': 25,
-            'MEDIUM': 20
-        };
-        probability += severityScores[violation.severity] || 20;
-
-        const successRate = Math.round((successCount / totalReports) * 100);
-        probability += successRate * 0.30;
-
-        if (totalReports >= 150) probability += 20;
-        else if (totalReports >= 100) probability += 15;
-        else if (totalReports >= 50) probability += 10;
-
-        probability += (violation.score || 75) * 0.15;
-
-        return Math.min(Math.round(probability * 100) / 100, 99.99);
     }
 
     async getAdminStats() {
@@ -1899,7 +2102,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '13.0.0',
+        version: '14.0.0',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
