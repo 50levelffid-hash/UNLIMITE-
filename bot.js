@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE+ BAN BOT v14.0 - WITH BUTTONS + EVIDENCE GUIDE
+// ULTIMATE+ BAN BOT v14.0 - FIXED SYNTAX ERROR
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -31,7 +31,7 @@ const CONFIG = {
     port: parseInt(process.env.PORT || '10000'),
     refersForReport: parseInt(process.env.REFERS_FOR_REPORT || '5'),
     maxWorkers: parseInt(process.env.MAX_WORKERS || '50'),
-    reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'), // 100 reports now
+    reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'),
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
 };
 
@@ -190,7 +190,7 @@ const Protected = mongoose.model('Protected', ProtectedSchema);
 const Analytics = mongoose.model('Analytics', AnalyticsSchema);
 
 // ============================================
-// PROXY POOL - DISABLED (Direct Mode)
+// PROXY POOL - DISABLED
 // ============================================
 
 class RealProxyPool {
@@ -243,7 +243,7 @@ class RealProxyPool {
 }
 
 // ============================================
-// AI REPORT ENGINE - IMPROVED
+// AI REPORT ENGINE
 // ============================================
 
 class AIReportEngine {
@@ -277,7 +277,6 @@ class AIReportEngine {
             ]
         };
 
-        // Different violation types for different reports
         this.allViolations = [
             'Spam', 'Scam', 'Phishing', 'Harassment', 'Doxxing', 'Hate Speech',
             'Cyberbullying', 'Copyright Infringement', 'Impersonation', 'Financial Fraud',
@@ -366,13 +365,11 @@ class AIReportEngine {
         const severity = violation.severity || 'HIGH';
         const name = violation.name || this.getRandomViolationName();
         
-        // Different evidence text based on what user provided
         let evidenceText = 'Multiple user reports with screenshots';
         if (evidence) {
             evidenceText = evidence;
         }
 
-        // Different victims count each report
         const victims = Math.floor(Math.random() * 40) + 5;
 
         return `🚨 [${severity}] ${name.toUpperCase()} REPORT #${index + 1}
@@ -492,6 +489,97 @@ class UltimateBot {
                 resize_keyboard: true
             }
         };
+    }
+
+    // ============================================
+    // START REPORT PROCESS - Method 1
+    // ============================================
+
+    async startReportProcess(chatId, userId, username, targetType) {
+        try {
+            const isSubscribed = await this.checkSubscription(userId);
+            if (!isSubscribed) {
+                await this.bot.sendMessage(
+                    chatId,
+                    `❌ **CHANNEL VERIFICATION REQUIRED**
+
+Please join: ${CONFIG.channelLink}`,
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            const user = await User.findOne({ telegram_id: userId.toString() });
+            if (!user) {
+                await this.bot.sendMessage(chatId, '❌ Please use /start first.');
+                return;
+            }
+
+            const points = user.points || 0;
+            const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
+            const reportsUsed = user.reports_used || 0;
+            const remaining = reportsAvailable - reportsUsed;
+
+            addLog(`📊 User @${username}: Points=${points}, Available=${reportsAvailable}, Used=${reportsUsed}, Remaining=${remaining}`, 'INFO');
+
+            if (remaining <= 0) {
+                const botUsername = await getBotUsername(this.bot);
+                await this.bot.sendMessage(
+                    chatId,
+                    `❌ **Insufficient Reports!**
+
+Need ${CONFIG.refersForReport} points for 1 report.
+Current points: ${points}
+
+🔗 Earn more: https://t.me/${botUsername}?start=${userId}`,
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            const typeNames = {
+                account: 'Account',
+                channel: 'Channel',
+                group: 'Group'
+            };
+
+            const typeExamples = {
+                account: '@username',
+                channel: '@channelname or https://t.me/channelname',
+                group: '@groupname or https://t.me/joinchat/xxxxx'
+            };
+
+            this.conversations.set(userId, { 
+                step: 'target', 
+                targetType: targetType,
+                typeName: typeNames[targetType]
+            });
+
+            await this.bot.sendMessage(
+                chatId,
+                `🎯 **Report ${typeNames[targetType]}**
+
+Send the ${typeNames[targetType].toLowerCase()} username or link.
+
+📝 Example: ${typeExamples[targetType]}
+
+⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!
+
+💡 /help for more info`,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [['❌ Cancel']],
+                        resize_keyboard: true,
+                        one_time_keyboard: true
+                    }
+                }
+            );
+
+        } catch (error) {
+            addLog(`❌ Start report error: ${error.message}`, 'ERROR');
+            await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
+        }
     }
 
     // ============================================
@@ -734,97 +822,6 @@ ${CONFIG.channelLink}`,
             addLog(`👥 Report Group clicked by @${username} (${userId})`, 'INFO');
             await this.startReportProcess(chatId, userId, username, 'group');
         });
-
-        // ============================================
-        // START REPORT PROCESS
-        // ============================================
-
-        async startReportProcess(chatId, userId, username, targetType) {
-            try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ **CHANNEL VERIFICATION REQUIRED**
-
-Please join: ${CONFIG.channelLink}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-
-                const user = await User.findOne({ telegram_id: userId.toString() });
-                if (!user) {
-                    await this.bot.sendMessage(chatId, '❌ Please use /start first.');
-                    return;
-                }
-
-                const points = user.points || 0;
-                const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
-                const reportsUsed = user.reports_used || 0;
-                const remaining = reportsAvailable - reportsUsed;
-
-                addLog(`📊 User @${username}: Points=${points}, Available=${reportsAvailable}, Used=${reportsUsed}, Remaining=${remaining}`, 'INFO');
-
-                if (remaining <= 0) {
-                    const botUsername = await getBotUsername(this.bot);
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ **Insufficient Reports!**
-
-Need ${CONFIG.refersForReport} points for 1 report.
-Current points: ${points}
-
-🔗 Earn more: https://t.me/${botUsername}?start=${userId}`,
-                        { parse_mode: 'Markdown' }
-                    );
-                    return;
-                }
-
-                const typeNames = {
-                    account: 'Account',
-                    channel: 'Channel',
-                    group: 'Group'
-                };
-
-                const typeExamples = {
-                    account: '@username',
-                    channel: '@channelname or https://t.me/channelname',
-                    group: '@groupname or https://t.me/joinchat/xxxxx'
-                };
-
-                this.conversations.set(userId, { 
-                    step: 'target', 
-                    targetType: targetType,
-                    typeName: typeNames[targetType]
-                });
-
-                await this.bot.sendMessage(
-                    chatId,
-                    `🎯 **Report ${typeNames[targetType]}**
-
-Send the ${typeNames[targetType].toLowerCase()} username or link.
-
-📝 Example: ${typeExamples[targetType]}
-
-⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!
-
-💡 /help for more info`,
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [['❌ Cancel']],
-                            resize_keyboard: true,
-                            one_time_keyboard: true
-                        }
-                    }
-                );
-
-            } catch (error) {
-                addLog(`❌ Start report error: ${error.message}`, 'ERROR');
-                await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
-            }
-        }
 
         // ============================================
         // CANCEL
@@ -1854,9 +1851,8 @@ ${evidenceGuide}`,
             const user = await User.findOne({ telegram_id: userId });
             const violation = this.reportEngine.detectViolation(evidence);
             
-            // Random ban probability
             const baseProbability = evidence ? 95 : 40;
-            const randomFactor = Math.floor(Math.random() * 15) - 5; // -5 to +10
+            const randomFactor = Math.floor(Math.random() * 15) - 5;
             const banProbability = Math.min(Math.max(baseProbability + randomFactor, 30), 99);
             
             addLog(`🎯 Violation: ${violation.type} (${violation.severity})`, 'INFO');
@@ -1878,7 +1874,6 @@ ${evidenceGuide}`,
             addLog(`📤 Sending ${totalReports} reports for @${username}`, 'INFO');
 
             for (let i = 0; i < totalReports; i++) {
-                // Different violation each time
                 const report = this.reportEngine.generateReport(
                     username,
                     targetType,
@@ -1887,7 +1882,6 @@ ${evidenceGuide}`,
                     i
                 );
 
-                // Send direct (no proxy)
                 let sent = false;
                 let retries = 2;
                 while (retries >= 0 && !sent) {
@@ -1905,7 +1899,6 @@ ${evidenceGuide}`,
                     failedCount++;
                 }
 
-                // Update progress
                 if ((i + 1) % 10 === 0 || i === totalReports - 1) {
                     const progress = Math.round(((i + 1) / totalReports) * 100);
                     const bar = this.getProgressBar(progress);
@@ -1937,7 +1930,6 @@ ${bar} ${progress}%
                 await this.delay(Math.random() * 1000 + 500);
             }
 
-            // Update report
             await Report.findByIdAndUpdate(reportId, {
                 report_count: totalReports,
                 success_count: successCount,
