@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE BAN BOT v1.0 - FULLY FIXED
+// ULTIMATE BAN BOT v1.1 - REFERRAL + MENU FIXED
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -230,7 +230,7 @@ const QRCode = mongoose.model('QRCode', QRCodeSchema);
 const Analytics = mongoose.model('Analytics', AnalyticsSchema);
 
 // ============================================
-// PROXY POOL - DISABLED (Direct Connection)
+// PROXY POOL - DISABLED
 // ============================================
 
 class RealProxyPool {
@@ -439,7 +439,7 @@ class AIReportEngine {
 • REPORT TO TELEGRAM TEAM
 
 🔖 REF: ${refId}
-🛡️ ULTIMATE BAN BOT v1.0 - 99.99% SUCCESS
+🛡️ ULTIMATE BAN BOT v1.1 - 99.99% SUCCESS
 
 📅 ${timestamp}`;
     }
@@ -465,7 +465,7 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE BAN BOT v1.0 - FULLY FIXED', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v1.1 - REFERRAL + MENU FIXED', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Channel: ${CONFIG.channelLink}`, 'INFO');
@@ -523,7 +523,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET MAIN MENU (Premium UI - with Menu button)
+    // GET MAIN MENU (with Menu button)
     // ============================================
 
     getMainMenu() {
@@ -547,7 +547,7 @@ class UltimateBot {
                         { text: '👑 Admin Panel' }
                     ],
                     [
-                        { text: '📋 Menu' }  // Menu button to send /start
+                        { text: '📋 Menu' }  // Menu button - sends /start
                     ]
                 ],
                 resize_keyboard: true,
@@ -1261,7 +1261,7 @@ You cannot protect another target.`,
 
     setupCommands() {
         // ============================================
-        // START COMMAND
+        // START COMMAND - FIXED REFERRAL
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1294,7 +1294,10 @@ You cannot protect another target.`,
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
-                // Check subscription
+                // ============================================
+                // CHECK SUBSCRIPTION - FIRST
+                // ============================================
+
                 const isSubscribed = await this.checkSubscription(userId);
 
                 if (!isSubscribed) {
@@ -1320,10 +1323,15 @@ After joining, click the "I've Joined" button to verify.`,
                             reply_markup: keyboard
                         }
                     );
+                    
+                    // Important: Don't process referral if not subscribed
                     return;
                 }
 
-                // Process referral if any (only for new users)
+                // ============================================
+                // PROCESS REFERRAL - ONLY AFTER SUBSCRIPTION
+                // ============================================
+
                 if (isNewUser && referralCode && referralCode.startsWith('REF_')) {
                     const referrer = await User.findOne({ referral_code: referralCode });
                     
@@ -1344,7 +1352,10 @@ After joining, click the "I've Joined" button to verify.`,
                     }
                 }
 
-                // Update user verification
+                // ============================================
+                // UPDATE USER VERIFICATION
+                // ============================================
+
                 if (!user.is_verified) {
                     user.is_verified = true;
                     await user.save();
@@ -1372,7 +1383,7 @@ After joining, click the "I've Joined" button to verify.`,
                     protectionMsg = `\n⏳ **Protection:** Payment Pending - Send screenshot`;
                 }
 
-                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v1.0**
+                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v1.1**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -1406,13 +1417,13 @@ After joining, click the "I've Joined" button to verify.`,
             }
         });
 
-        // Menu button to send /start
+        // ============================================
+        // MENU BUTTON - Sends /start
+        // ============================================
+
         this.bot.onText(/📋 Menu/, async (msg) => {
-            // Simulate /start command
             const chatId = msg.chat.id;
-            const userId = msg.from.id;
-            const fakeMsg = { chat: { id: chatId }, from: { id: userId } };
-            // We'll just call the /start handler by sending a command
+            // Simulate /start command
             await this.bot.sendMessage(chatId, '/start');
         });
 
@@ -3029,7 +3040,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '1.0',
+        version: '1.1',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
