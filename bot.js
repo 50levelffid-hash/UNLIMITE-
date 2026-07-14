@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE+ BAN BOT v17.0 - PROTECTION SYSTEM COMPLETE
+// ULTIMATE BAN BOT v1.0 - FULLY FIXED
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -130,7 +130,6 @@ const UserSchema = new mongoose.Schema({
     is_banned: { type: Boolean, default: false },
     last_active: { type: Date, default: Date.now },
     created_at: { type: Date, default: Date.now },
-    // Protection System
     protection_status: { type: String, enum: ['none', 'pending_payment', 'pending_approval', 'approved', 'active', 'expired'], default: 'none' },
     protection_type: { type: String, enum: ['account', 'channel', 'group', 'none'], default: 'none' },
     protection_target: { type: String, default: null },
@@ -198,7 +197,7 @@ const PaymentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const QRCodeSchema = new mongoose.Schema({
-    file_id: { type: String, required: true }, // Telegram file_id
+    file_id: { type: String, required: true },
     file_path: { type: String, default: null },
     payment_amount: { type: Number, default: 40 },
     is_active: { type: Boolean, default: true },
@@ -231,7 +230,7 @@ const QRCode = mongoose.model('QRCode', QRCodeSchema);
 const Analytics = mongoose.model('Analytics', AnalyticsSchema);
 
 // ============================================
-// PROXY POOL - DISABLED
+// PROXY POOL - DISABLED (Direct Connection)
 // ============================================
 
 class RealProxyPool {
@@ -440,7 +439,7 @@ class AIReportEngine {
 • REPORT TO TELEGRAM TEAM
 
 🔖 REF: ${refId}
-🛡️ ULTIMATE+ BAN SYSTEM v17.0 - 99.99% SUCCESS
+🛡️ ULTIMATE BAN BOT v1.0 - 99.99% SUCCESS
 
 📅 ${timestamp}`;
     }
@@ -466,7 +465,7 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE+ BAN BOT v17.0 - PROTECTION SYSTEM COMPLETE', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v1.0 - FULLY FIXED', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Channel: ${CONFIG.channelLink}`, 'INFO');
@@ -524,7 +523,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET MAIN MENU (Premium UI - Blue Buttons)
+    // GET MAIN MENU (Premium UI - with Menu button)
     // ============================================
 
     getMainMenu() {
@@ -532,25 +531,27 @@ class UltimateBot {
             reply_markup: {
                 keyboard: [
                     [
-                        { text: '🎯 Report Account', color: '#0088cc' },
-                        { text: '📢 Report Channel', color: '#0088cc' }
+                        { text: '🎯 Report Account' },
+                        { text: '📢 Report Channel' }
                     ],
                     [
-                        { text: '👥 Report Group', color: '#0088cc' },
-                        { text: '🛡️ Protection', color: '#0088cc' }
+                        { text: '👥 Report Group' },
+                        { text: '🛡️ Protection' }
                     ],
                     [
-                        { text: '📊 My Stats', color: '#0088cc' },
-                        { text: '🔗 Refer & Earn', color: '#0088cc' }
+                        { text: '📊 My Stats' },
+                        { text: '🔗 Refer & Earn' }
                     ],
                     [
-                        { text: 'ℹ️ Help', color: '#0088cc' },
-                        { text: '👑 Admin Panel', color: '#0088cc' }
+                        { text: 'ℹ️ Help' },
+                        { text: '👑 Admin Panel' }
+                    ],
+                    [
+                        { text: '📋 Menu' }  // Menu button to send /start
                     ]
                 ],
                 resize_keyboard: true,
-                one_time_keyboard: false,
-                selective: false
+                one_time_keyboard: false
             }
         };
     }
@@ -1157,19 +1158,25 @@ You cannot protect another target.`,
     }
 
     // ============================================
-    // HANDLE REFERRAL (FIXED + RATE LIMITED)
+    // HANDLE REFERRAL - FIXED
     // ============================================
 
-    async handleReferral(userId, referrerId) {
+    async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
+            // Check if referrer is subscribed
             const isSubscribed = await this.checkSubscription(parseInt(referrerId));
             if (!isSubscribed) {
+                addLog(`❌ Referrer ${referrerId} not subscribed, referral denied`, 'WARN');
                 return false;
             }
 
             const referrer = await User.findOne({ telegram_id: referrerId });
-            if (!referrer) return false;
+            if (!referrer) {
+                addLog(`❌ Referrer ${referrerId} not found`, 'WARN');
+                return false;
+            }
 
+            // Rate limit check (2 per minute)
             const now = new Date();
             const oneMinuteAgo = new Date(now.getTime() - 60000);
 
@@ -1182,12 +1189,14 @@ You cannot protect another target.`,
                 return false;
             }
 
+            // Add points
             referrer.points += 1;
             referrer.referrals += 1;
             referrer.referral_count_minute += 1;
             referrer.last_referral_time = now;
             await referrer.save();
 
+            // Update analytics
             await Analytics.updateOne(
                 { date: { $gte: new Date().setHours(0,0,0,0) } },
                 { $inc: { total_referrals: 1 } },
@@ -1196,17 +1205,47 @@ You cannot protect another target.`,
 
             addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
 
+            // Notify referrer
             try {
+                const newUser = await User.findOne({ telegram_id: userId });
+                const newName = newUserUsername || `@${newUser?.username || 'user'}`;
                 await this.bot.sendMessage(
                     parseInt(referrerId),
                     `🎉 **New Referral!**
 
-👤 New user joined using your link!
+👤 ${newName} joined using your referral link!
 ⭐ You earned 1 point!
-📊 Total Points: ${referrer.points}`,
+📊 Total Points: ${referrer.points}
+
+🔗 Keep sharing: https://t.me/${await getBotUsername(this.bot)}?start=${referrer.referral_code}`,
                     { parse_mode: 'Markdown' }
                 );
-            } catch (e) {}
+            } catch (e) {
+                addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
+            }
+
+            // Notify admins about referral
+            for (const adminId of CONFIG.adminIds) {
+                try {
+                    const newUser = await User.findOne({ telegram_id: userId });
+                    const newName = newUserUsername || `@${newUser?.username || 'user'}`;
+                    await this.bot.sendMessage(
+                        adminId,
+                        `👥 **New Referral!**
+
+👤 Referrer: @${referrer.username}
+👤 New User: ${newName}
+🆔 Referrer ID: ${referrerId}
+🆔 New User ID: ${userId}
+⭐ Points Earned: 1
+
+📊 Referrer Total Points: ${referrer.points}`,
+                        { parse_mode: 'Markdown' }
+                    );
+                } catch (e) {
+                    addLog(`❌ Failed to notify admin about referral: ${e.message}`, 'ERROR');
+                }
+            }
 
             return true;
 
@@ -1238,8 +1277,10 @@ You cannot protect another target.`,
                 const botUsername = await getBotUsername(this.bot);
 
                 let user = await User.findOne({ telegram_id: userId.toString() });
-                
+                let isNewUser = false;
+
                 if (!user) {
+                    isNewUser = true;
                     const referralCodeGen = `REF_${userId}_${Date.now().toString(36)}`;
                     user = new User({
                         telegram_id: userId.toString(),
@@ -1282,8 +1323,8 @@ After joining, click the "I've Joined" button to verify.`,
                     return;
                 }
 
-                // Process referral if any
-                if (referralCode && referralCode.startsWith('REF_')) {
+                // Process referral if any (only for new users)
+                if (isNewUser && referralCode && referralCode.startsWith('REF_')) {
                     const referrer = await User.findOne({ referral_code: referralCode });
                     
                     if (referrer && referrer.telegram_id !== userId.toString()) {
@@ -1294,7 +1335,11 @@ After joining, click the "I've Joined" button to verify.`,
                         }
 
                         if (isReferrerSubscribed) {
-                            await this.handleReferral(userId, referrer.telegram_id);
+                            // Pass new user's name
+                            const newUserUsername = `@${username || 'user'}`;
+                            await this.handleReferral(userId, referrer.telegram_id, newUserUsername);
+                        } else {
+                            addLog(`⚠️ Referrer ${referrer.username} not subscribed, referral ignored`, 'WARN');
                         }
                     }
                 }
@@ -1327,7 +1372,7 @@ After joining, click the "I've Joined" button to verify.`,
                     protectionMsg = `\n⏳ **Protection:** Payment Pending - Send screenshot`;
                 }
 
-                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v17.0**
+                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v1.0**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -1359,6 +1404,16 @@ After joining, click the "I've Joined" button to verify.`,
                 addLog(`❌ Start error: ${error.message}`, 'ERROR');
                 await this.bot.sendMessage(chatId, '❌ Error starting bot.');
             }
+        });
+
+        // Menu button to send /start
+        this.bot.onText(/📋 Menu/, async (msg) => {
+            // Simulate /start command
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+            const fakeMsg = { chat: { id: chatId }, from: { id: userId } };
+            // We'll just call the /start handler by sending a command
+            await this.bot.sendMessage(chatId, '/start');
         });
 
         // ============================================
@@ -1714,7 +1769,7 @@ https://t.me/${botUsername}?start=${user.referral_code}`;
             const protectedCount = await Protected.countDocuments();
             const pendingPayments = await Payment.countDocuments({ status: 'pending' });
 
-            const adminMessage = `👑 **Admin Panel v17.0**
+            const adminMessage = `👑 **Admin Panel**
 
 📊 **Stats:**
 • Users: ${stats.totalUsers}
@@ -2103,7 +2158,7 @@ Type /cancel to cancel.`
         });
 
         // ============================================
-        // ADMIN: ADD QR (SEND PHOTO)
+        // ADMIN: ADD QR (Send Photo)
         // ============================================
 
         this.bot.onText(/\/addqr/, async (msg) => {
@@ -2974,7 +3029,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '17.0.0',
+        version: '1.0',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
