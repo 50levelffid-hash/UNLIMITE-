@@ -97,7 +97,7 @@ const rateLimiter = new RateLimiterMemory({
 // ============================================
 
 mongoose.connect(CONFIG.mongoUri, {
-    dbName: 'ultimate_ban_bot',
+    dbName: 'ultimate_ban',
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000
 });
