@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE+ BAN BOT v15.0 - WITH PROTECTION SYSTEM
+// ULTIMATE+ BAN BOT v16.0 - FIXED + PREMIUM UI
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -33,7 +33,8 @@ const CONFIG = {
     maxWorkers: parseInt(process.env.MAX_WORKERS || '50'),
     reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'),
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
-    protectionPrice: parseInt(process.env.PROTECTION_PRICE || '5'), // Default price in $ or points
+    protectionPrice: parseInt(process.env.PROTECTION_PRICE || '40'), // 40rs
+    referralPerMinute: 2 // 2 referral per minute (hidden)
 };
 
 // ============================================
@@ -128,13 +129,15 @@ const UserSchema = new mongoose.Schema({
     is_banned: { type: Boolean, default: false },
     last_active: { type: Date, default: Date.now },
     created_at: { type: Date, default: Date.now },
-    // Protection System Fields
     protection_status: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
     protection_type: { type: String, enum: ['account', 'channel', 'group', 'none'], default: 'none' },
     protection_target: { type: String, default: null },
     transaction_id: { type: String, default: null },
     transaction_ss: { type: String, default: null },
-    protection_expiry: { type: Date, default: null }
+    protection_expiry: { type: Date, default: null },
+    // Referral rate limiting (hidden)
+    last_referral_time: { type: Date, default: null },
+    referral_count_minute: { type: Number, default: 0 }
 }, { timestamps: true });
 
 const ReportSchema = new mongoose.Schema({
@@ -182,7 +185,7 @@ const ProtectedSchema = new mongoose.Schema({
 const PaymentSchema = new mongoose.Schema({
     user_id: { type: String, index: true },
     username: String,
-    amount: { type: Number, default: 0 },
+    amount: { type: Number, default: 40 },
     transaction_id: { type: String, unique: true, index: true },
     transaction_ss: String,
     protection_type: { type: String, enum: ['account', 'channel', 'group'] },
@@ -195,7 +198,7 @@ const PaymentSchema = new mongoose.Schema({
 
 const QRCodeSchema = new mongoose.Schema({
     qr_code_url: { type: String, required: true },
-    payment_amount: { type: Number, default: 0 },
+    payment_amount: { type: Number, default: 40 },
     payment_method: String,
     is_active: { type: Boolean, default: true },
     created_by: { type: String, index: true },
@@ -436,7 +439,7 @@ class AIReportEngine {
 • REPORT TO TELEGRAM TEAM
 
 🔖 REF: ${refId}
-🛡️ ULTIMATE+ BAN SYSTEM v15.0 - 99.99% SUCCESS
+🛡️ ULTIMATE+ BAN SYSTEM v16.0 - 99.99% SUCCESS
 
 📅 ${timestamp}`;
     }
@@ -462,13 +465,13 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE+ BAN BOT v15.0 - WITH PROTECTION', 'INFO');
+        addLog('🚀 ULTIMATE+ BAN BOT v16.0 - PREMIUM EDITION', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Channel: ${CONFIG.channelLink}`, 'INFO');
         addLog(`⚙️ Workers: ${CONFIG.maxWorkers}`, 'INFO');
         addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
-        addLog(`🛡️ Protection Price: $${CONFIG.protectionPrice}`, 'INFO');
+        addLog(`🛡️ Protection Price: ₹${CONFIG.protectionPrice}`, 'INFO');
         addLog(`🌐 Proxy: DISABLED (Direct Connection)`, 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog('✅ Bot is LIVE!', 'INFO');
@@ -505,7 +508,6 @@ class UltimateBot {
                 target_type: targetType,
                 target_id: target
             });
-            // Check if protected and not expired
             if (protectedItem) {
                 if (protectedItem.expiry_date && new Date() > protectedItem.expiry_date) {
                     await Protected.findOneAndDelete({ _id: protectedItem._id });
@@ -520,20 +522,33 @@ class UltimateBot {
     }
 
     // ============================================
-    // MAIN MENU BUTTONS
+    // GET MAIN MENU (Premium UI - Blue Buttons)
     // ============================================
 
     getMainMenu() {
         return {
             reply_markup: {
                 keyboard: [
-                    ['🎯 Report Account', '📢 Report Channel'],
-                    ['👥 Report Group', '🛡️ Protection'],
-                    ['📊 My Stats', '🔗 Refer & Earn'],
-                    ['📢 Channel', 'ℹ️ Help'],
-                    ['👑 Admin Panel']
+                    [
+                        { text: '🎯 Report Account', color: '#0088cc' },
+                        { text: '📢 Report Channel', color: '#0088cc' }
+                    ],
+                    [
+                        { text: '👥 Report Group', color: '#0088cc' },
+                        { text: '🛡️ Protection', color: '#0088cc' }
+                    ],
+                    [
+                        { text: '📊 My Stats', color: '#0088cc' },
+                        { text: '🔗 Refer & Earn', color: '#0088cc' }
+                    ],
+                    [
+                        { text: 'ℹ️ Help', color: '#0088cc' },
+                        { text: '👑 Admin Panel', color: '#0088cc' }
+                    ]
                 ],
-                resize_keyboard: true
+                resize_keyboard: true,
+                one_time_keyboard: false,
+                selective: false
             }
         };
     }
@@ -653,7 +668,6 @@ Please join: ${CONFIG.channelLink}`,
                 return;
             }
 
-            // Check if user already has protection
             if (user.protection_status === 'approved') {
                 const protectedItem = await Protected.findOne({ protected_by: userId.toString() });
                 if (protectedItem) {
@@ -663,16 +677,13 @@ Please join: ${CONFIG.channelLink}`,
 
 📋 Type: ${protectedItem.target_type.toUpperCase()}
 🎯 Target: ${protectedItem.target_name}
-📅 Expiry: ${protectedItem.expiry_date ? moment(protectedItem.expiry_date).format('DD MMM YYYY') : 'Never'}
-
-✅ Your target is already protected!`,
+📅 Expiry: ${protectedItem.expiry_date ? moment(protectedItem.expiry_date).format('DD MMM YYYY') : 'Never'}`,
                         { parse_mode: 'Markdown' }
                     );
                     return;
                 }
             }
 
-            // Show protection options
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🛡️ Protect Account', callback_data: 'protect_account' }],
@@ -692,7 +703,7 @@ Select what you want to protect:
 📢 **Channel** - Protect any Telegram channel
 👥 **Group** - Protect any Telegram group
 
-💰 **Price:** $${CONFIG.protectionPrice}
+💰 **Price:** ₹${CONFIG.protectionPrice}
 
 💡 After payment, your target will be protected from ban reports!`,
                 {
@@ -713,7 +724,6 @@ Select what you want to protect:
 
     async processPayment(chatId, userId, username, protectionType) {
         try {
-            // Get active QR code from admin
             const qrCode = await QRCode.findOne({ is_active: true });
             if (!qrCode) {
                 await this.bot.sendMessage(
@@ -728,10 +738,8 @@ No payment QR code available. Please contact admin.
                 return;
             }
 
-            // Create transaction
             const transactionId = `TXN-${randomstring.generate({length: 10, charset: 'numeric'})}`;
             
-            // Save payment record
             const payment = new Payment({
                 user_id: userId.toString(),
                 username: username,
@@ -742,7 +750,6 @@ No payment QR code available. Please contact admin.
             });
             await payment.save();
 
-            // Update user
             await User.findOneAndUpdate(
                 { telegram_id: userId.toString() },
                 { 
@@ -752,33 +759,29 @@ No payment QR code available. Please contact admin.
                 }
             );
 
-            // Send QR code with payment instructions
             await this.bot.sendPhoto(
                 chatId,
                 qrCode.qr_code_url,
                 {
                     caption: `💳 **Payment Required**
 
-💰 Amount: $${CONFIG.protectionPrice}
+💰 Amount: ₹${CONFIG.protectionPrice}
 🆔 Transaction ID: ${transactionId}
 📋 Type: ${protectionType.toUpperCase()}
 
 📤 **Instructions:**
 1. Scan the QR code
-2. Pay $${CONFIG.protectionPrice}
+2. Pay ₹${CONFIG.protectionPrice}
 3. Send transaction screenshot here
 4. Wait for admin approval
 
 ⏳ **Please wait 15 minutes** for transaction verification.
 
-⚠️ **Don't close this chat!** Admin will respond here.
-
-💡 After approval, your target will be protected!`,
+⚠️ **Don't close this chat!** Admin will respond here.`,
                     parse_mode: 'Markdown'
                 }
             );
 
-            // Notify admin
             for (const adminId of CONFIG.adminIds) {
                 try {
                     await this.bot.sendMessage(
@@ -787,7 +790,7 @@ No payment QR code available. Please contact admin.
 
 👤 User: @${username}
 🆔 User ID: ${userId}
-💰 Amount: $${CONFIG.protectionPrice}
+💰 Amount: ₹${CONFIG.protectionPrice}
 📋 Type: ${protectionType.toUpperCase()}
 🆔 Transaction: ${transactionId}
 
@@ -808,6 +811,72 @@ Use /approve ${transactionId} or /reject ${transactionId}`,
         } catch (error) {
             addLog(`❌ Payment error: ${error.message}`, 'ERROR');
             await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
+        }
+    }
+
+    // ============================================
+    // HANDLE REFERRAL (FIXED + RATE LIMITED)
+    // ============================================
+
+    async handleReferral(userId, referrerId) {
+        try {
+            // Check if referrer is subscribed
+            const isSubscribed = await this.checkSubscription(parseInt(referrerId));
+            if (!isSubscribed) {
+                return false;
+            }
+
+            // Check rate limit (2 per minute - hidden)
+            const referrer = await User.findOne({ telegram_id: referrerId });
+            if (!referrer) return false;
+
+            const now = new Date();
+            const oneMinuteAgo = new Date(now.getTime() - 60000);
+
+            // Reset counter if last referral was more than 1 minute ago
+            if (!referrer.last_referral_time || referrer.last_referral_time < oneMinuteAgo) {
+                referrer.referral_count_minute = 0;
+            }
+
+            // Check if already reached limit
+            if (referrer.referral_count_minute >= CONFIG.referralPerMinute) {
+                addLog(`⚠️ Referral rate limit hit for @${referrer.username}`, 'WARN');
+                return false;
+            }
+
+            // Add points
+            referrer.points += 1;
+            referrer.referrals += 1;
+            referrer.referral_count_minute += 1;
+            referrer.last_referral_time = now;
+            await referrer.save();
+
+            await Analytics.updateOne(
+                { date: { $gte: new Date().setHours(0,0,0,0) } },
+                { $inc: { total_referrals: 1 } },
+                { upsert: true }
+            );
+
+            addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
+
+            // Notify referrer
+            try {
+                await this.bot.sendMessage(
+                    parseInt(referrerId),
+                    `🎉 **New Referral!**
+
+👤 New user joined using your link!
+⭐ You earned 1 point!
+📊 Total Points: ${referrer.points}`,
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (e) {}
+
+            return true;
+
+        } catch (error) {
+            addLog(`❌ Referral error: ${error.message}`, 'ERROR');
+            return false;
         }
     }
 
@@ -848,6 +917,7 @@ Use /approve ${transactionId} or /reject ${transactionId}`,
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
+                // CHECK SUBSCRIPTION FIRST
                 const isSubscribed = await this.checkSubscription(userId);
 
                 if (!isSubscribed) {
@@ -876,59 +946,31 @@ After joining, click the "I've Joined" button to verify.`,
                     return;
                 }
 
-                if (!user.is_verified) {
-                    user.is_verified = true;
-                    await user.save();
-                    addLog(`✅ User @${username} verified`, 'INFO');
-                }
-
+                // IF SUBSCRIBED, PROCESS REFERRAL
                 if (referralCode && referralCode.startsWith('REF_')) {
                     const referrer = await User.findOne({ referral_code: referralCode });
                     
                     if (referrer && referrer.telegram_id !== userId.toString()) {
+                        // Check if referrer is admin (no need subscription check)
                         const isReferrerAdmin = CONFIG.adminIds.includes(parseInt(referrer.telegram_id));
+                        
+                        // Check if referrer is subscribed (only for non-admins)
                         let isReferrerSubscribed = true;
                         if (!isReferrerAdmin) {
                             isReferrerSubscribed = await this.checkSubscription(parseInt(referrer.telegram_id));
                         }
 
                         if (isReferrerSubscribed) {
-                            referrer.points += 1;
-                            referrer.referrals += 1;
-                            await referrer.save();
-
-                            await Analytics.updateOne(
-                                { date: { $gte: new Date().setHours(0,0,0,0) } },
-                                { $inc: { total_referrals: 1 } },
-                                { upsert: true }
-                            );
-
-                            addLog(`🔗 Referral: @${username} referred by @${referrer.username}`, 'INFO');
-
-                            try {
-                                await this.bot.sendMessage(
-                                    parseInt(referrer.telegram_id),
-                                    `🎉 **New Referral!**
-
-👤 @${username || 'user'} joined using your link!
-⭐ You earned 1 point!
-📊 Total Points: ${referrer.points}`,
-                                    { parse_mode: 'Markdown' }
-                                );
-                            } catch (e) {}
-
-                            await this.bot.sendMessage(
-                                chatId,
-                                `🎉 **You were referred!**
-
-👤 Referrer: @${referrer.username || 'user'}
-⭐ You both earned 1 point!
-
-📊 Your Points: ${user.points}`,
-                                { parse_mode: 'Markdown' }
-                            );
+                            await this.handleReferral(userId, referrer.telegram_id);
                         }
                     }
+                }
+
+                // UPDATE USER VERIFICATION
+                if (!user.is_verified) {
+                    user.is_verified = true;
+                    await user.save();
+                    addLog(`✅ User @${username} verified`, 'INFO');
                 }
 
                 user = await User.findOne({ telegram_id: userId.toString() });
@@ -949,7 +991,7 @@ After joining, click the "I've Joined" button to verify.`,
                     protectionMsg = `\n⏳ **Protection:** Pending approval`;
                 }
 
-                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v15.0**
+                const welcomeMessage = `🔥 **ULTIMATE+ BAN BOT v16.0**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -962,7 +1004,6 @@ After joining, click the "I've Joined" button to verify.`,
 • ${CONFIG.reportsPerTarget} Reports per Target
 • 3 Report Types: Account, Channel, Group
 • 🛡️ Protection System
-• Direct Connection (No Proxy)
 
 🔗 **Referral System:**
 • ${CONFIG.refersForReport} points = 1 report
@@ -997,7 +1038,6 @@ After joining, click the "I've Joined" button to verify.`,
             addLog(`📥 Callback: ${data} from @${username}`, 'INFO');
 
             try {
-                // Verify channel
                 if (data === 'verify_channel') {
                     const isSubscribed = await this.checkSubscription(userId);
                     
@@ -1029,7 +1069,6 @@ ${CONFIG.channelLink}`,
                     return;
                 }
 
-                // Protection options
                 if (data === 'protect_account' || data === 'protect_channel' || data === 'protect_group') {
                     const protectionType = data.replace('protect_', '');
                     await this.processPayment(chatId, userId, username, protectionType);
@@ -1043,21 +1082,6 @@ ${CONFIG.channelLink}`,
                         `🔙 Back to main menu.`,
                         this.getMainMenu()
                     );
-                    await this.bot.answerCallbackQuery(query.id);
-                    return;
-                }
-
-                // Handle approval/rejection from admin
-                if (data.startsWith('approve_')) {
-                    const transactionId = data.replace('approve_', '');
-                    await this.handlePaymentApproval(chatId, userId, transactionId, true);
-                    await this.bot.answerCallbackQuery(query.id);
-                    return;
-                }
-
-                if (data.startsWith('reject_')) {
-                    const transactionId = data.replace('reject_', '');
-                    await this.handlePaymentApproval(chatId, userId, transactionId, false);
                     await this.bot.answerCallbackQuery(query.id);
                     return;
                 }
@@ -1258,24 +1282,7 @@ https://t.me/${botUsername}?start=${user.referral_code}`;
         });
 
         // ============================================
-        // CHANNEL
-        // ============================================
-
-        this.bot.onText(/📢 Channel/, async (msg) => {
-            const chatId = msg.chat.id;
-            await this.bot.sendMessage(
-                chatId,
-                `📢 **Official Channel**
-
-${CONFIG.channelLink}
-
-Join for updates and support!`,
-                { parse_mode: 'Markdown' }
-            );
-        });
-
-        // ============================================
-        // HELP - WITH EVIDENCE GUIDE
+        // HELP
         // ============================================
 
         this.bot.onText(/ℹ️ Help/, async (msg) => {
@@ -1292,7 +1299,7 @@ Join for updates and support!`,
 🛡️ **Protection System:**
 1. Click "🛡️ Protection"
 2. Select what to protect (Account/Channel/Group)
-3. Pay $${CONFIG.protectionPrice}
+3. Pay ₹${CONFIG.protectionPrice}
 4. Send transaction screenshot
 5. Wait for admin approval (15 min)
 6. Your target is protected!
@@ -1354,7 +1361,7 @@ Join for updates and support!`,
             const protectedCount = await Protected.countDocuments();
             const pendingPayments = await Payment.countDocuments({ status: 'pending' });
 
-            const adminMessage = `👑 **Admin Panel v15.0**
+            const adminMessage = `👑 **Admin Panel v16.0**
 
 📊 **Stats:**
 • Users: ${stats.totalUsers}
@@ -1745,10 +1752,10 @@ Type /cancel to cancel.`
         });
 
         // ============================================
-        // ADMIN: ADD QR CODE
+        // ADMIN: ADD QR CODE (FIXED - RESPONDS NOW)
         // ============================================
 
-        this.bot.onText(/\/addqr (.+)/, async (msg, match) => {
+        this.bot.onText(/\/addqr/, async (msg) => {
             const chatId = msg.chat.id;
             const userId = msg.from.id;
 
@@ -1757,40 +1764,22 @@ Type /cancel to cancel.`
                 return;
             }
 
-            const qrUrl = match[1].trim();
+            // Ask for QR URL
+            this.conversations.set(userId, { step: 'addqr_url' });
+            await this.bot.sendMessage(
+                chatId,
+                `📤 **Add QR Code**
 
-            try {
-                await QRCode.create({
-                    qr_code_url: qrUrl,
-                    payment_amount: CONFIG.protectionPrice,
-                    created_by: userId.toString(),
-                    is_active: true
-                });
+Please send the QR code image URL.
 
-                // Deactivate old QR codes
-                await QRCode.updateMany(
-                    { _id: { $ne: (await QRCode.findOne({ is_active: true }))?._id } },
-                    { is_active: false }
-                );
+Example: https://i.imgur.com/abc123.jpg
 
-                addLog(`✅ Admin added QR code`, 'INFO');
-
-                await this.bot.sendMessage(
-                    chatId,
-                    `✅ **QR Code Added Successfully!**
-
-📤 QR URL: ${qrUrl}
-💰 Amount: $${CONFIG.protectionPrice}
-
-This QR code will be shown to users for protection payments.`,
-                    { parse_mode: 'Markdown' }
-                );
-            } catch (error) {
-                addLog(`❌ Add QR error: ${error.message}`, 'ERROR');
-                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
-            }
+Type /cancel to cancel.`,
+                { parse_mode: 'Markdown' }
+            );
         });
 
+        // QR URL handler in message handler
         // ============================================
         // ADMIN: REMOVE QR CODE
         // ============================================
@@ -1852,7 +1841,7 @@ All payments are processed.`,
                 for (const p of payments) {
                     paymentMessage += `🆔 ${p.transaction_id}\n`;
                     paymentMessage += `👤 @${p.username || 'unknown'}\n`;
-                    paymentMessage += `💰 $${p.amount}\n`;
+                    paymentMessage += `💰 ₹${p.amount}\n`;
                     paymentMessage += `📋 ${p.protection_type.toUpperCase()}\n`;
                     paymentMessage += `📅 ${moment(p.created_at).fromNow()}\n`;
                     paymentMessage += `\n/approve ${p.transaction_id} | /reject ${p.transaction_id}\n`;
@@ -1868,7 +1857,7 @@ All payments are processed.`,
         });
 
         // ============================================
-        // ADMIN: APPROVE/REJECT (Handled via callback)
+        // ADMIN: APPROVE/REJECT
         // ============================================
 
         this.bot.onText(/\/approve (.+)/, async (msg, match) => {
@@ -1926,38 +1915,32 @@ All payments are processed.`,
             }
 
             if (approve) {
-                // Approve payment
                 payment.status = 'approved';
                 await payment.save();
 
-                // Create protection
                 await Protected.create({
                     target_type: payment.protection_type,
                     target_id: 'pending_' + payment.user_id,
                     target_name: `@${user.username || 'user'}`,
                     protected_by: payment.user_id,
                     transaction_id: transactionId,
-                    expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+                    expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
                 });
 
-                // Update user
                 user.protection_status = 'approved';
                 user.protection_type = payment.protection_type;
                 user.transaction_id = transactionId;
                 await user.save();
 
-                // Notify user
                 try {
                     await this.bot.sendMessage(
                         parseInt(payment.user_id),
                         `✅ **Payment Approved!**
 
 🛡️ Your ${payment.protection_type.toUpperCase()} is now protected!
-💰 Amount: $${payment.amount}
+💰 Amount: ₹${payment.amount}
 🆔 Transaction: ${transactionId}
-📅 Expiry: ${moment(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)).format('DD MMM YYYY')}
-
-✅ You can now protect your target!`,
+📅 Expiry: ${moment(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)).format('DD MMM YYYY')}`,
                         { parse_mode: 'Markdown' }
                     );
                 } catch (e) {}
@@ -1967,7 +1950,7 @@ All payments are processed.`,
                     `✅ **Payment Approved!**
 
 👤 User: @${user.username}
-💰 Amount: $${payment.amount}
+💰 Amount: ₹${payment.amount}
 📋 Type: ${payment.protection_type.toUpperCase()}
 🆔 Transaction: ${transactionId}
 
@@ -1976,24 +1959,21 @@ User has been notified.`,
                 );
 
             } else {
-                // Reject payment
                 payment.status = 'rejected';
                 await payment.save();
 
-                // Update user
                 user.protection_status = 'rejected';
                 await user.save();
 
-                // Notify user
                 try {
                     await this.bot.sendMessage(
                         parseInt(payment.user_id),
                         `❌ **Payment Failed!**
 
-💰 Amount: $${payment.amount}
+💰 Amount: ₹${payment.amount}
 🆔 Transaction: ${transactionId}
 
-❌ Your payment was rejected. Please try again with correct payment.
+❌ Your payment was rejected. Please try again.
 
 📤 Send /start to try again.`,
                         { parse_mode: 'Markdown' }
@@ -2005,7 +1985,7 @@ User has been notified.`,
                     `✅ **Payment Rejected!**
 
 👤 User: @${user.username}
-💰 Amount: $${payment.amount}
+💰 Amount: ₹${payment.amount}
 🆔 Transaction: ${transactionId}
 
 User has been notified.`,
@@ -2323,13 +2303,11 @@ ${evidenceGuide}`,
                         return;
                     }
 
-                    // Update payment
                     await Payment.findOneAndUpdate(
                         { transaction_id: transactionId },
                         { transaction_ss: ssText, updated_at: new Date() }
                     );
 
-                    // Notify user
                     await this.bot.sendMessage(
                         chatId,
                         `✅ **Screenshot Received!**
@@ -2338,13 +2316,10 @@ ${evidenceGuide}`,
 
 ⏳ Please wait for admin approval (5-15 minutes).
 
-📋 Transaction ID: ${transactionId}
-
-✅ You will be notified when approved.`,
+📋 Transaction ID: ${transactionId}`,
                         { parse_mode: 'Markdown' }
                     );
 
-                    // Forward to admin
                     for (const adminId of CONFIG.adminIds) {
                         try {
                             const payment = await Payment.findOne({ transaction_id: transactionId });
@@ -2354,7 +2329,7 @@ ${evidenceGuide}`,
 
 👤 User: @${username}
 🆔 User ID: ${userId}
-💰 Amount: $${CONFIG.protectionPrice}
+💰 Amount: ₹${CONFIG.protectionPrice}
 📋 Type: ${protectionType.toUpperCase()}
 🆔 Transaction: ${transactionId}
 
@@ -2369,6 +2344,56 @@ ${evidenceGuide}`,
                     }
 
                     this.conversations.delete(userId);
+                }
+
+                // ============================================
+                // ADD QR URL
+                // ============================================
+
+                else if (conversation.step === 'addqr_url') {
+                    const qrUrl = text.trim();
+
+                    if (!qrUrl.startsWith('http://') && !qrUrl.startsWith('https://')) {
+                        await this.bot.sendMessage(
+                            chatId,
+                            `❌ Please enter a valid URL starting with http:// or https://`,
+                            { parse_mode: 'Markdown' }
+                        );
+                        return;
+                    }
+
+                    try {
+                        await QRCode.create({
+                            qr_code_url: qrUrl,
+                            payment_amount: CONFIG.protectionPrice,
+                            created_by: userId.toString(),
+                            is_active: true
+                        });
+
+                        await QRCode.updateMany(
+                            { _id: { $ne: (await QRCode.findOne({ is_active: true }))?._id } },
+                            { is_active: false }
+                        );
+
+                        addLog(`✅ Admin added QR code`, 'INFO');
+
+                        await this.bot.sendMessage(
+                            chatId,
+                            `✅ **QR Code Added Successfully!**
+
+📤 QR URL: ${qrUrl}
+💰 Amount: ₹${CONFIG.protectionPrice}
+
+This QR code will be shown to users for protection payments.`,
+                            { parse_mode: 'Markdown' }
+                        );
+
+                        this.conversations.delete(userId);
+
+                    } catch (error) {
+                        addLog(`❌ Add QR error: ${error.message}`, 'ERROR');
+                        await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+                    }
                 }
 
                 // ============================================
@@ -2745,14 +2770,10 @@ ${evidence ? '📤 Evidence: ✅ Provided (Higher success)' : '📤 Evidence: �
     startScheduledJobs() {
         cron.schedule('0 0 * * *', async () => {
             try {
-                // Clean old reports
                 const oldDate = new Date();
                 oldDate.setDate(oldDate.getDate() - 30);
                 await Report.deleteMany({ created_at: { $lt: oldDate } });
-                
-                // Clean expired protections
                 await Protected.deleteMany({ expiry_date: { $lt: new Date() } });
-                
                 addLog('🧹 Cleaned old reports and expired protections', 'INFO');
             } catch (error) {
                 addLog(`❌ Cleanup error: ${error.message}`, 'ERROR');
@@ -2777,7 +2798,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '15.0.0',
+        version: '16.0.0',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
