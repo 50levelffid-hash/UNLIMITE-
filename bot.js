@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE BAN BOT v1.1 - REFERRAL + MENU FIXED
+// ULTIMATE BAN BOT v1.2 - REFERRAL + MENU FIXED
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -48,11 +48,11 @@ async function getBotUsername(bot) {
     if (!BOT_USERNAME_CACHE) {
         try {
             const me = await bot.getMe();
-            BOT_USERNAME_CACHE = me.username || 'ultimate_ban_bot';
+            BOT_USERNAME_CACHE = me.username || 'Tgreportingbanbot';
             console.log(`✅ Bot Username: @${BOT_USERNAME_CACHE}`);
         } catch (error) {
             console.warn('⚠️ Could not fetch bot username, using fallback');
-            BOT_USERNAME_CACHE = 'ultimate_ban_bot';
+            BOT_USERNAME_CACHE = 'Tgreportingbanbot';
         }
     }
     return BOT_USERNAME_CACHE;
@@ -439,7 +439,7 @@ class AIReportEngine {
 • REPORT TO TELEGRAM TEAM
 
 🔖 REF: ${refId}
-🛡️ ULTIMATE BAN BOT v1.1 - 99.99% SUCCESS
+🛡️ ULTIMATE BAN BOT v1.2 - 99.99% SUCCESS
 
 📅 ${timestamp}`;
     }
@@ -465,7 +465,7 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE BAN BOT v1.1 - REFERRAL + MENU FIXED', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v1.2 - REFERRAL + MENU FIXED', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Channel: ${CONFIG.channelLink}`, 'INFO');
@@ -523,7 +523,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET MAIN MENU (with Menu button)
+    // GET MAIN MENU (without Menu button)
     // ============================================
 
     getMainMenu() {
@@ -545,15 +545,22 @@ class UltimateBot {
                     [
                         { text: 'ℹ️ Help' },
                         { text: '👑 Admin Panel' }
-                    ],
-                    [
-                        { text: '📋 Menu' }  // Menu button - sends /start
                     ]
                 ],
                 resize_keyboard: true,
                 one_time_keyboard: false
             }
         };
+    }
+
+    // ============================================
+    // GET REFERRAL LINK - FIXED (Only User ID)
+    // ============================================
+
+    async getReferralLink(userId) {
+        const botUsername = await getBotUsername(this.bot);
+        // Only user ID, no extra text
+        return `https://t.me/${botUsername}?start=${userId}`;
     }
 
     // ============================================
@@ -587,6 +594,7 @@ Please join: ${CONFIG.channelLink}`,
 
             if (remaining <= 0) {
                 const botUsername = await getBotUsername(this.bot);
+                const referralLink = await this.getReferralLink(userId);
                 await this.bot.sendMessage(
                     chatId,
                     `❌ **Insufficient Reports!**
@@ -594,7 +602,7 @@ Please join: ${CONFIG.channelLink}`,
 Need ${CONFIG.refersForReport} points for 1 report.
 Current points: ${points}
 
-🔗 Earn more: https://t.me/${botUsername}?start=${userId}`,
+🔗 Earn more: ${referralLink}`,
                     { parse_mode: 'Markdown' }
                 );
                 return;
@@ -1158,7 +1166,7 @@ You cannot protect another target.`,
     }
 
     // ============================================
-    // HANDLE REFERRAL - FIXED
+    // HANDLE REFERRAL - FIXED (User ID only)
     // ============================================
 
     async handleReferral(userId, referrerId, newUserUsername = null) {
@@ -1205,7 +1213,8 @@ You cannot protect another target.`,
 
             addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
 
-            // Notify referrer
+            // Notify referrer - Using new referral link format (only user ID)
+            const referralLink = await this.getReferralLink(referrer.telegram_id);
             try {
                 const newUser = await User.findOne({ telegram_id: userId });
                 const newName = newUserUsername || `@${newUser?.username || 'user'}`;
@@ -1217,7 +1226,7 @@ You cannot protect another target.`,
 ⭐ You earned 1 point!
 📊 Total Points: ${referrer.points}
 
-🔗 Keep sharing: https://t.me/${await getBotUsername(this.bot)}?start=${referrer.referral_code}`,
+🔗 Keep sharing: ${referralLink}`,
                     { parse_mode: 'Markdown' }
                 );
             } catch (e) {
@@ -1261,7 +1270,7 @@ You cannot protect another target.`,
 
     setupCommands() {
         // ============================================
-        // START COMMAND - FIXED REFERRAL
+        // START COMMAND - FIXED REFERRAL (User ID only)
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1281,6 +1290,7 @@ You cannot protect another target.`,
 
                 if (!user) {
                     isNewUser = true;
+                    // Generate referral code for the user
                     const referralCodeGen = `REF_${userId}_${Date.now().toString(36)}`;
                     user = new User({
                         telegram_id: userId.toString(),
@@ -1330,24 +1340,42 @@ After joining, click the "I've Joined" button to verify.`,
 
                 // ============================================
                 // PROCESS REFERRAL - ONLY AFTER SUBSCRIPTION
+                // FIXED: Only User ID, no extra text
                 // ============================================
 
-                if (isNewUser && referralCode && referralCode.startsWith('REF_')) {
-                    const referrer = await User.findOne({ referral_code: referralCode });
+                if (isNewUser && referralCode) {
+                    // Check if referralCode is a valid user ID (numeric)
+                    // Or if it starts with 'REF_' (old format, keep for compatibility)
+                    let referrerId = null;
                     
-                    if (referrer && referrer.telegram_id !== userId.toString()) {
-                        const isReferrerAdmin = CONFIG.adminIds.includes(parseInt(referrer.telegram_id));
-                        let isReferrerSubscribed = true;
-                        if (!isReferrerAdmin) {
-                            isReferrerSubscribed = await this.checkSubscription(parseInt(referrer.telegram_id));
+                    if (!isNaN(referralCode) && referralCode.length > 5) {
+                        // Numeric user ID
+                        referrerId = referralCode;
+                    } else if (referralCode.startsWith('REF_')) {
+                        // Old format: Find user by referral_code
+                        const referrer = await User.findOne({ referral_code: referralCode });
+                        if (referrer) {
+                            referrerId = referrer.telegram_id;
                         }
+                    }
+                    
+                    if (referrerId && referrerId !== userId.toString()) {
+                        const referrer = await User.findOne({ telegram_id: referrerId });
+                        
+                        if (referrer) {
+                            const isReferrerAdmin = CONFIG.adminIds.includes(parseInt(referrerId));
+                            let isReferrerSubscribed = true;
+                            if (!isReferrerAdmin) {
+                                isReferrerSubscribed = await this.checkSubscription(parseInt(referrerId));
+                            }
 
-                        if (isReferrerSubscribed) {
-                            // Pass new user's name
-                            const newUserUsername = `@${username || 'user'}`;
-                            await this.handleReferral(userId, referrer.telegram_id, newUserUsername);
-                        } else {
-                            addLog(`⚠️ Referrer ${referrer.username} not subscribed, referral ignored`, 'WARN');
+                            if (isReferrerSubscribed) {
+                                // Pass new user's name
+                                const newUserUsername = `@${username || 'user'}`;
+                                await this.handleReferral(userId, referrerId, newUserUsername);
+                            } else {
+                                addLog(`⚠️ Referrer ${referrer.username} not subscribed, referral ignored`, 'WARN');
+                            }
                         }
                     }
                 }
@@ -1383,7 +1411,10 @@ After joining, click the "I've Joined" button to verify.`,
                     protectionMsg = `\n⏳ **Protection:** Payment Pending - Send screenshot`;
                 }
 
-                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v1.1**
+                // Get referral link (only user ID)
+                const referralLink = await this.getReferralLink(userId);
+
+                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v1.2**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -1399,6 +1430,7 @@ After joining, click the "I've Joined" button to verify.`,
 
 🔗 **Referral System:**
 • ${CONFIG.refersForReport} points = 1 report
+• Share: ${referralLink}
 
 📢 **Channel:** ${CONFIG.channelLink}
 
@@ -1415,16 +1447,6 @@ After joining, click the "I've Joined" button to verify.`,
                 addLog(`❌ Start error: ${error.message}`, 'ERROR');
                 await this.bot.sendMessage(chatId, '❌ Error starting bot.');
             }
-        });
-
-        // ============================================
-        // MENU BUTTON - Sends /start
-        // ============================================
-
-        this.bot.onText(/📋 Menu/, async (msg) => {
-            const chatId = msg.chat.id;
-            // Simulate /start command
-            await this.bot.sendMessage(chatId, '/start');
         });
 
         // ============================================
@@ -1604,7 +1626,7 @@ ${CONFIG.channelLink}`,
                 const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
                 const reportsUsed = user.reports_used || 0;
                 const remaining = reportsAvailable - reportsUsed;
-                const botUsername = await getBotUsername(this.bot);
+                const referralLink = await this.getReferralLink(userId);
 
                 let protectionInfo = '❌ None';
                 if (user.protection_status === 'active') {
@@ -1635,7 +1657,7 @@ ${CONFIG.channelLink}`,
 🔄 Last Active: ${moment(user.last_active).fromNow()}
 
 🔗 Referral Link:
-https://t.me/${botUsername}?start=${user.referral_code}
+${referralLink}
 
 💡 **Higher Evidence = Higher Ban Chance!**`;
 
@@ -1674,7 +1696,7 @@ https://t.me/${botUsername}?start=${user.referral_code}
 
                 const points = user.points || 0;
                 const nextReport = CONFIG.refersForReport - (points % CONFIG.refersForReport);
-                const botUsername = await getBotUsername(this.bot);
+                const referralLink = await this.getReferralLink(userId);
 
                 const referMessage = `🔗 **Refer & Earn Points!**
 
@@ -1689,7 +1711,7 @@ https://t.me/${botUsername}?start=${user.referral_code}
 4. ${CONFIG.reportsPerTarget} reports = 99.99% ban
 
 🔗 Your Referral Link:
-https://t.me/${botUsername}?start=${user.referral_code}`;
+${referralLink}`;
 
                 await this.bot.sendMessage(chatId, referMessage, { parse_mode: 'Markdown' });
 
@@ -3040,7 +3062,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '1.1',
+        version: '1.2',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
