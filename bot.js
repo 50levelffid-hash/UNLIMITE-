@@ -57,7 +57,7 @@ const CONFIG = {
             },
             // ✅ NEW PUBLIC CHANNEL (Replaces welcome channel)
             {
-                id: '-1002651635512',
+                id: 'rtfgaming1',
                 link: 'https://t.me/rtfgaming1',
                 name: 'RTF Gaming Channel',
                 type: 'channel',
