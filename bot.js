@@ -23,7 +23,7 @@ dotenv.config();
 // ============================================
 
 const CONFIG = {
-    token: process.env.BOT_TOKEN || '8459236869:AAE-dLDm38DmNv3-OIRTdSt4UktMD5wP-is',
+    token: process.env.BOT_TOKEN || '8887495397:AAEaJHmJ70oeT-gxdpv-P4_HoL6WoDMcTOU',
     adminIds: JSON.parse(process.env.ADMIN_IDS || '[123456789]'),
     mongoUri: process.env.MONGODB_URI || 'mongodb+srv://sahajada07x:Apon07@sahajada.a8r2wdp.mongodb.net/?appName=Sahajada',
     port: parseInt(process.env.PORT || '10000'),
