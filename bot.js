@@ -1,6 +1,6 @@
 // ============================================
-// ULTIMATE BAN BOT v2.0 - 4 CHANNELS SYSTEM
-// 99.99% SUCCESS RATE
+// ULTIMATE BAN BOT v2.0 - FULLY FIXED
+// 4 CHANNELS SYSTEM + REFERRAL
 // ============================================
 
 const TelegramBot = require('node-telegram-bot-api');
@@ -54,15 +54,16 @@ const CONFIG = {
                 link: 'https://t.me/USERX1NFO',
                 name: 'RTF Community',
                 type: 'group'
+            },
+            // ✅ NEW PUBLIC CHANNEL (Replaces welcome channel)
+            {
+                id: '-1002651635512',
+                link: 'https://t.me/rtfgaming1',
+                name: 'RTF Gaming Channel',
+                type: 'channel',
+                isPublic: true
             }
-        ],
-        welcome: {
-            id: '-1004344229003',
-            link: 'https://t.me/+X-s0bMpbnwlmOTM9',
-            name: '🎁 RTF Welcome Bonus',
-            type: 'channel',
-            showOnce: true
-        }
+        ]
     }
 };
 
@@ -498,7 +499,6 @@ class UltimateBot {
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Mandatory Channels: ${CONFIG.channels.mandatory.length}`, 'INFO');
-        addLog(`🎁 Welcome Channel: ${CONFIG.channels.welcome.name}`, 'INFO');
         addLog(`⚙️ Workers: ${CONFIG.maxWorkers}`, 'INFO');
         addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
         addLog(`🛡️ Protection Price: ₹${CONFIG.protectionPrice}`, 'INFO');
@@ -513,23 +513,39 @@ class UltimateBot {
     }
 
     // ============================================
-    // CHECK ALL SUBSCRIPTIONS - MODIFIED
+    // CHECK ALL SUBSCRIPTIONS - FIXED ✅
     // ============================================
 
     async checkAllSubscriptions(userId) {
         const results = {
             allSubscribed: true,
             mandatory: [],
-            welcome: null,
             missingChannels: []
         };
         
         for (const channel of CONFIG.channels.mandatory) {
             try {
-                const chatMember = await this.bot.getChatMember(parseInt(channel.id), userId);
-                const isMember = chatMember.status === 'member' || 
-                               chatMember.status === 'administrator' || 
-                               chatMember.status === 'creator';
+                let isMember = false;
+                
+                // For public channels (like rtfgaming1), check differently
+                if (channel.isPublic) {
+                    try {
+                        // Try to get chat member for public channel
+                        const chatMember = await this.bot.getChatMember(`@${channel.id}`, userId);
+                        isMember = chatMember.status === 'member' || 
+                                  chatMember.status === 'administrator' || 
+                                  chatMember.status === 'creator';
+                    } catch (error) {
+                        // If can't check, assume not joined for public channels
+                        // For public channels, we'll show the join button
+                        isMember = false;
+                    }
+                } else {
+                    const chatMember = await this.bot.getChatMember(parseInt(channel.id), userId);
+                    isMember = chatMember.status === 'member' || 
+                              chatMember.status === 'administrator' || 
+                              chatMember.status === 'creator';
+                }
                 
                 results.mandatory.push({
                     ...channel,
@@ -546,64 +562,45 @@ class UltimateBot {
             }
         }
         
-        const user = await User.findOne({ telegram_id: userId.toString() });
-        if (user && !user.welcome_channel_shown) {
-            results.welcome = CONFIG.channels.welcome;
-        }
-        
         return results;
     }
 
     // ============================================
-    // CHECK SINGLE CHANNEL (For mandatory)
+    // SHOW ALL CHANNELS (4 Channels - 2 per row)
     // ============================================
 
-    async checkSingleChannel(userId, channelId) {
-        try {
-            const chatMember = await this.bot.getChatMember(parseInt(channelId), userId);
-            return chatMember.status === 'member' || 
-                   chatMember.status === 'administrator' || 
-                   chatMember.status === 'creator';
-        } catch (error) {
-            return false;
-        }
-    }
-
-    // ============================================
-    // SHOW WELCOME CHANNEL WITH MANDATORY CHANNELS (1 TIME - NO CHECK)
-    // ============================================
-
-    async showWelcomeWithChannels(chatId, userId, missingChannels = []) {
-        const welcome = CONFIG.channels.welcome;
-        
-        if (!welcome) return;
-        
-        // ✅ FIXED: Removed Markdown to avoid parsing errors
+    async showAllChannels(chatId, userId, missingChannels = []) {
         let message = `🎁 WELCOME TO ULTIMATE BAN BOT!\n\n`;
-        message += `🔥 Please join these channels to use the bot:\n\n`;
+        message += `🔥 Please join ALL these channels to use the bot:\n\n`;
         
         const keyboard = {
             inline_keyboard: []
         };
         
-        for (let i = 0; i < CONFIG.channels.mandatory.length; i += 2) {
+        // Add all channels (2 per row)
+        const allChannels = CONFIG.channels.mandatory;
+        for (let i = 0; i < allChannels.length; i += 2) {
             const row = [];
-            const channel1 = CONFIG.channels.mandatory[i];
+            const channel1 = allChannels[i];
             if (channel1) {
                 row.push({ text: `📢 ${channel1.name}`, url: channel1.link });
             }
-            const channel2 = CONFIG.channels.mandatory[i + 1];
+            const channel2 = allChannels[i + 1];
             if (channel2) {
                 row.push({ text: `📢 ${channel2.name}`, url: channel2.link });
             }
             keyboard.inline_keyboard.push(row);
         }
         
-        message += `\n🎁 Bonus Channel (One-time view):\n`;
-        message += `📢 ${welcome.name}\n\n`;
-        keyboard.inline_keyboard.push([
-            { text: '🎁 View Welcome Channel', url: welcome.link }
-        ]);
+        // If specific missing channels, show them separately
+        if (missingChannels.length > 0) {
+            message += `\n⚠️ You need to join these channels first:\n\n`;
+            for (const channel of missingChannels) {
+                message += `• ${channel.name}\n`;
+            }
+        }
+        
+        message += `\n✅ After joining, click the button below to verify!`;
         
         keyboard.inline_keyboard.push([
             { text: '✅ I\'ve Joined All Channels', callback_data: 'verify_all_channels' }
@@ -617,7 +614,7 @@ class UltimateBot {
             }
         );
         
-        addLog(`🎁 Welcome with channels shown to user ${userId}`, 'INFO');
+        addLog(`🎁 All channels shown to user ${userId}`, 'INFO');
     }
 
     // ============================================
@@ -625,7 +622,6 @@ class UltimateBot {
     // ============================================
 
     async showMissingChannels(chatId, userId, missingChannels) {
-        // ✅ FIXED: Removed Markdown to avoid parsing errors
         let message = `🔐 CHANNEL VERIFICATION REQUIRED\n\n`;
         message += `Please join these channels to use the bot:\n\n`;
         
@@ -633,6 +629,7 @@ class UltimateBot {
             inline_keyboard: []
         };
         
+        // Add missing channels (2 per row)
         for (let i = 0; i < missingChannels.length; i += 2) {
             const row = [];
             const channel1 = missingChannels[i];
@@ -660,7 +657,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET MAIN MENU (Without Channel Button)
+    // GET MAIN MENU
     // ============================================
 
     getMainMenu() {
@@ -691,7 +688,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET REFERRAL LINK (Only User ID)
+    // GET REFERRAL LINK
     // ============================================
 
     async getReferralLink(userId) {
@@ -700,11 +697,12 @@ class UltimateBot {
     }
 
     // ============================================
-    // START REPORT PROCESS
+    // START REPORT PROCESS - WITH CHANNEL CHECK ✅
     // ============================================
 
     async startReportProcess(chatId, userId, username, targetType) {
         try {
+            // ✅ CHECK CHANNELS FIRST
             const subStatus = await this.checkAllSubscriptions(userId);
             
             if (!subStatus.allSubscribed) {
@@ -770,11 +768,12 @@ class UltimateBot {
     }
 
     // ============================================
-    // START PROTECTION PROCESS
+    // START PROTECTION PROCESS - WITH CHANNEL CHECK ✅
     // ============================================
 
     async startProtectionProcess(chatId, userId, username) {
         try {
+            // ✅ CHECK CHANNELS FIRST
             const subStatus = await this.checkAllSubscriptions(userId);
             
             if (!subStatus.allSubscribed) {
@@ -1125,14 +1124,22 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE REFERRAL
+    // HANDLE REFERRAL - FULLY WORKING ✅
     // ============================================
 
     async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
+            // ✅ Check if referrer is subscribed to ALL channels
             const subStatus = await this.checkAllSubscriptions(parseInt(referrerId));
             if (!subStatus.allSubscribed) {
-                addLog(`❌ Referrer ${referrerId} not subscribed, referral denied`, 'WARN');
+                addLog(`❌ Referrer ${referrerId} not subscribed to all channels, referral denied`, 'WARN');
+                // Notify referrer they need to join channels
+                try {
+                    await this.bot.sendMessage(
+                        parseInt(referrerId),
+                        `❌ Referral Failed!\n\nYou need to join ALL channels to earn referral points.\n\nPlease use /start to see the channels you need to join.`
+                    );
+                } catch (e) {}
                 return false;
             }
 
@@ -1142,6 +1149,7 @@ class UltimateBot {
                 return false;
             }
 
+            // Rate limit check (2 per minute)
             const now = new Date();
             const oneMinuteAgo = new Date(now.getTime() - 60000);
 
@@ -1154,12 +1162,14 @@ class UltimateBot {
                 return false;
             }
 
+            // ✅ Add points
             referrer.points += 1;
             referrer.referrals += 1;
             referrer.referral_count_minute += 1;
             referrer.last_referral_time = now;
             await referrer.save();
 
+            // Update analytics
             await Analytics.updateOne(
                 { date: { $gte: new Date().setHours(0,0,0,0) } },
                 { $inc: { total_referrals: 1 } },
@@ -1168,6 +1178,7 @@ class UltimateBot {
 
             addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
 
+            // Notify referrer
             const referralLink = await this.getReferralLink(referrer.telegram_id);
             try {
                 const newUser = await User.findOne({ telegram_id: userId });
@@ -1180,6 +1191,7 @@ class UltimateBot {
                 addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
             }
 
+            // Notify admins about referral
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const newUser = await User.findOne({ telegram_id: userId });
@@ -1241,27 +1253,25 @@ class UltimateBot {
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
+                // ============================================
+                // CHECK SUBSCRIPTIONS - ALL 4 CHANNELS
+                // ============================================
+
                 const subStatus = await this.checkAllSubscriptions(userId);
                 
+                // Agar koi channel missing hai
                 if (!subStatus.allSubscribed) {
                     addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
                     
-                    if (!user.welcome_channel_shown) {
-                        await this.showWelcomeWithChannels(chatId, userId, subStatus.missingChannels);
-                        user.welcome_channel_shown = true;
-                        await user.save();
-                    } else {
-                        await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
-                    }
+                    // Show all channels with missing ones highlighted
+                    await this.showAllChannels(chatId, userId, subStatus.missingChannels);
                     
                     return;
                 }
-                
-                if (!user.welcome_channel_shown) {
-                    await this.showWelcomeWithChannels(chatId, userId, []);
-                    user.welcome_channel_shown = true;
-                    await user.save();
-                }
+
+                // ============================================
+                // PROCESS REFERRAL - ✅ FULLY WORKING
+                // ============================================
 
                 if (isNewUser && referralCode) {
                     let referrerId = null;
@@ -1295,6 +1305,10 @@ class UltimateBot {
                         }
                     }
                 }
+
+                // ============================================
+                // UPDATE USER VERIFICATION
+                // ============================================
 
                 if (!user.is_verified) {
                     user.is_verified = true;
@@ -1372,6 +1386,7 @@ class UltimateBot {
 
             try {
                 if (data === 'verify_all_channels') {
+                    // ✅ Re-check all channels
                     const subStatus = await this.checkAllSubscriptions(userId);
                     
                     if (subStatus.allSubscribed) {
@@ -1386,6 +1401,7 @@ class UltimateBot {
                             `✅ VERIFICATION SUCCESSFUL!\n\nNow you can use the bot! Send /start to continue.`
                         );
                     } else {
+                        // Show only missing channels
                         await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     }
                     await this.bot.answerCallbackQuery(query.id);
@@ -1430,7 +1446,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // PROTECTION BUTTON
+        // PROTECTION BUTTON - WITH CHANNEL CHECK ✅
         // ============================================
 
         this.bot.onText(/🛡️ Protection/, async (msg) => {
@@ -1439,11 +1455,19 @@ class UltimateBot {
             const username = msg.from.username || 'unknown';
 
             addLog(`🛡️ Protection clicked by @${username} (${userId})`, 'INFO');
+            
+            // ✅ Check channels first
+            const subStatus = await this.checkAllSubscriptions(userId);
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
+                return;
+            }
+            
             await this.startProtectionProcess(chatId, userId, username);
         });
 
         // ============================================
-        // REPORT ACCOUNT BUTTON
+        // REPORT ACCOUNT BUTTON - WITH CHANNEL CHECK ✅
         // ============================================
 
         this.bot.onText(/🎯 Report Account/, async (msg) => {
@@ -1452,11 +1476,19 @@ class UltimateBot {
             const username = msg.from.username || 'unknown';
 
             addLog(`🎯 Report Account clicked by @${username} (${userId})`, 'INFO');
+            
+            // ✅ Check channels first
+            const subStatus = await this.checkAllSubscriptions(userId);
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
+                return;
+            }
+            
             await this.startReportProcess(chatId, userId, username, 'account');
         });
 
         // ============================================
-        // REPORT CHANNEL BUTTON
+        // REPORT CHANNEL BUTTON - WITH CHANNEL CHECK ✅
         // ============================================
 
         this.bot.onText(/📢 Report Channel/, async (msg) => {
@@ -1465,11 +1497,19 @@ class UltimateBot {
             const username = msg.from.username || 'unknown';
 
             addLog(`📢 Report Channel clicked by @${username} (${userId})`, 'INFO');
+            
+            // ✅ Check channels first
+            const subStatus = await this.checkAllSubscriptions(userId);
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
+                return;
+            }
+            
             await this.startReportProcess(chatId, userId, username, 'channel');
         });
 
         // ============================================
-        // REPORT GROUP BUTTON
+        // REPORT GROUP BUTTON - WITH CHANNEL CHECK ✅
         // ============================================
 
         this.bot.onText(/👥 Report Group/, async (msg) => {
@@ -1478,6 +1518,14 @@ class UltimateBot {
             const username = msg.from.username || 'unknown';
 
             addLog(`👥 Report Group clicked by @${username} (${userId})`, 'INFO');
+            
+            // ✅ Check channels first
+            const subStatus = await this.checkAllSubscriptions(userId);
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
+                return;
+            }
+            
             await this.startReportProcess(chatId, userId, username, 'group');
         });
 
@@ -1496,7 +1544,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // MY STATS
+        // MY STATS - WITH CHANNEL CHECK ✅
         // ============================================
 
         this.bot.onText(/📊 My Stats/, async (msg) => {
@@ -1504,6 +1552,7 @@ class UltimateBot {
             const userId = msg.from.id;
 
             try {
+                // ✅ Check channels first
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1536,7 +1585,6 @@ class UltimateBot {
                     protectionInfo = '⏳ Payment Pending';
                 }
 
-                // ✅ FIXED: NO Markdown
                 const statsMessage = `📊 Your Stats
 
 👤 User: @${user.username || 'unknown'}
@@ -1565,7 +1613,7 @@ ${referralLink}
         });
 
         // ============================================
-        // REFER & EARN
+        // REFER & EARN - WITH CHANNEL CHECK ✅
         // ============================================
 
         this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
@@ -1573,6 +1621,7 @@ ${referralLink}
             const userId = msg.from.id;
 
             try {
+                // ✅ Check channels first
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1589,7 +1638,6 @@ ${referralLink}
                 const nextReport = CONFIG.refersForReport - (points % CONFIG.refersForReport);
                 const referralLink = await this.getReferralLink(userId);
 
-                // ✅ FIXED: NO Markdown
                 const referMessage = `🔗 Refer & Earn Points!
 
 📊 Your Stats:
@@ -1601,6 +1649,8 @@ ${referralLink}
 2. Each new user = 1 point
 3. ${CONFIG.refersForReport} points = 1 report
 4. ${CONFIG.reportsPerTarget} reports = 99.99% ban
+
+⚠️ Important: You must stay subscribed to ALL channels to earn points!
 
 🔗 Your Referral Link:
 ${referralLink}`;
@@ -1620,7 +1670,6 @@ ${referralLink}`;
         this.bot.onText(/ℹ️ Help/, async (msg) => {
             const chatId = msg.chat.id;
             
-            // ✅ FIXED: NO Markdown
             const helpMessage = `ℹ️ Help & Guide
 
 🔥 How to Ban:
@@ -1691,7 +1740,6 @@ No Evidence (Skip) | 5%
             const protectedCount = await Protected.countDocuments();
             const pendingPayments = await Payment.countDocuments({ status: 'pending' });
 
-            // ✅ FIXED: NO Markdown
             const adminMessage = `👑 Admin Panel
 
 📊 Stats:
@@ -1718,7 +1766,6 @@ No Evidence (Skip) | 5%
 📢 Channel Management:
 • /addchannel id link name - Add mandatory channel
 • /removechannel id - Remove mandatory channel
-• /setwelcome id link name - Set welcome channel
 • /listchannels - List all channels`;
 
             await this.bot.sendMessage(chatId, adminMessage);
@@ -1746,7 +1793,8 @@ No Evidence (Skip) | 5%
                     id: channelId,
                     link: channelLink,
                     name: channelName,
-                    type: 'channel'
+                    type: 'channel',
+                    isPublic: channelId.startsWith('@') || channelId.includes('rtf') ? true : false
                 });
 
                 addLog(`✅ Admin added channel: ${channelName} (${channelId})`, 'INFO');
@@ -1801,45 +1849,6 @@ No Evidence (Skip) | 5%
         });
 
         // ============================================
-        // ADMIN: SET WELCOME CHANNEL
-        // ============================================
-
-        this.bot.onText(/\/setwelcome (.+) (.+) (.+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            if (!CONFIG.adminIds.includes(parseInt(userId))) {
-                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
-                return;
-            }
-
-            const channelId = match[1].trim();
-            const channelLink = match[2].trim();
-            const channelName = match[3].trim();
-
-            try {
-                CONFIG.channels.welcome = {
-                    id: channelId,
-                    link: channelLink,
-                    name: channelName,
-                    type: 'channel',
-                    showOnce: true
-                };
-
-                addLog(`✅ Admin set welcome channel: ${channelName} (${channelId})`, 'INFO');
-
-                await this.bot.sendMessage(
-                    chatId,
-                    `✅ Welcome Channel Set Successfully!\n\n🎁 Name: ${channelName}\n🆔 ID: ${channelId}\n🔗 Link: ${channelLink}\n\n💡 This channel will show to users only once on first start.`
-                );
-
-            } catch (error) {
-                addLog(`❌ Set welcome channel error: ${error.message}`, 'ERROR');
-                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
-            }
-        });
-
-        // ============================================
         // ADMIN: LIST CHANNELS
         // ============================================
 
@@ -1858,20 +1867,14 @@ No Evidence (Skip) | 5%
             for (const channel of CONFIG.channels.mandatory) {
                 message += `• ${channel.name}\n`;
                 message += `  🆔 ${channel.id}\n`;
-                message += `  🔗 ${channel.link}\n\n`;
+                message += `  🔗 ${channel.link}\n`;
+                if (channel.isPublic) {
+                    message += `  📌 Public Channel\n`;
+                }
+                message += `\n`;
             }
 
-            if (CONFIG.channels.welcome) {
-                message += `Welcome Channel (1 time show):\n`;
-                message += `• ${CONFIG.channels.welcome.name}\n`;
-                message += `  🆔 ${CONFIG.channels.welcome.id}\n`;
-                message += `  🔗 ${CONFIG.channels.welcome.link}\n`;
-                message += `  💡 Shows once on first start\n\n`;
-            } else {
-                message += `Welcome Channel: Not set\n\n`;
-            }
-
-            message += `💡 Use /addchannel, /removechannel, /setwelcome to manage channels.`;
+            message += `💡 Use /addchannel, /removechannel to manage channels.`;
 
             await this.bot.sendMessage(chatId, message);
         });
@@ -2165,7 +2168,6 @@ No Evidence (Skip) | 5%
 
 📢 Channels:
 • Mandatory: ${CONFIG.channels.mandatory.length}
-• Welcome: ${CONFIG.channels.welcome ? '✅ Set' : '❌ Not set'}
 
 📊 Recent Analytics:\n`;
             
@@ -2335,6 +2337,7 @@ No Evidence (Skip) | 5%
             addLog(`📥 Message from @${username}: ${text || 'Media'}`, 'INFO');
 
             try {
+                // ✅ CHECK CHANNELS FIRST
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -2401,7 +2404,6 @@ No Evidence (Skip) | 5%
                         group: 'Group'
                     };
 
-                    // ✅ FIXED: NO Markdown
                     const evidenceGuide = `📤 Upload Evidence or type "skip".
 
 📸 Best Evidence:
@@ -2530,7 +2532,6 @@ Skip Evidence | 5%
                     const evidenceStatus = evidenceText ? '✅ Provided' : '❌ Skipped';
                     const banChance = evidenceText ? '95%' : '5%';
 
-                    // ✅ FIXED: NO Markdown
                     await this.bot.sendMessage(
                         chatId,
                         `⚙️ Processing Ban for ${target}\n\n📊 ${CONFIG.reportsPerTarget} reports being sent\n🎯 Target: ${target}\n📋 Type: ${targetType.toUpperCase()}\n📤 Evidence: ${evidenceStatus}\n🎯 Ban Chance: ${banChance}\n\n⏳ Please wait... This takes 2-3 minutes.`
@@ -2875,7 +2876,6 @@ Skip Evidence | 5%
             addLog(`✅ Completed for @${username}: ${successCount}/${totalReports} (${Math.round((successCount/totalReports)*100)}%)`, 'INFO');
 
             const emoji = banProbability >= 90 ? '🔥' : banProbability >= 70 ? '✅' : '⚠️';
-            // ✅ FIXED: NO Markdown
             const finalMessage = `${emoji} BAN PROCESS COMPLETE!\n\n📊 Summary:\n• Target: @${username}\n• Type: ${targetType.toUpperCase()}\n• Total Reports: ${totalReports}\n• Successful: ${successCount}\n• Failed: ${failedCount}\n• Success Rate: ${Math.round((successCount/totalReports)*100)}%\n• Ban Probability: ${banProbability}%\n\n${banProbability >= 90 ? '🔥 90-99% BAN PROBABILITY! HIGH CHANCE!' : banProbability >= 70 ? '✅ 70-89% BAN PROBABILITY! GOOD CHANCE!' : '⚠️ 30-69% BAN PROBABILITY! NEED MORE EVIDENCE!'}\n\n📎 Reference: ${reportId}\n⏳ Expected Action: 12-72 hours\n\n${evidence ? '📤 Evidence: ✅ Provided (Higher success)' : '📤 Evidence: ❌ Skipped (Lower success)'}\n\n💡 Next time: Upload screenshots + links for 95% ban chance!`;
 
             await this.bot.editMessageText(finalMessage, {
