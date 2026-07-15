@@ -577,32 +577,46 @@ class UltimateBot {
     }
 
     // ============================================
-    // SHOW WELCOME CHANNEL (1 TIME - NO CHECK)
+    // SHOW WELCOME CHANNEL WITH MANDATORY CHANNELS (1 TIME - NO CHECK)
     // ============================================
 
-    async showWelcomeChannel(chatId, userId) {
+    async showWelcomeWithChannels(chatId, userId, missingChannels = []) {
         const welcome = CONFIG.channels.welcome;
         
         if (!welcome) return;
         
-        const message = `🎁 **SPECIAL WELCOME CHANNEL!**
-
-📢 **${welcome.name}**
-
-🔗 **Link:** ${welcome.link}
-
-💡 **No need to join!** Just click and check it out!
-
-✨ This is a one-time welcome message. You won't see it again!
-
-👀 Check out our exclusive content!`;
-
+        let message = `🎁 **WELCOME TO ULTIMATE BAN BOT!**\n\n`;
+        message += `🔥 **Please join these channels to use the bot:**\n\n`;
+        
         const keyboard = {
-            inline_keyboard: [
-                [{ text: '🎁 Visit Welcome Channel', url: welcome.link }],
-                [{ text: '✅ Done', callback_data: 'welcome_done' }]
-            ]
+            inline_keyboard: []
         };
+        
+        // Add all mandatory channels (2 per row)
+        for (let i = 0; i < CONFIG.channels.mandatory.length; i += 2) {
+            const row = [];
+            const channel1 = CONFIG.channels.mandatory[i];
+            if (channel1) {
+                row.push({ text: `📢 ${channel1.name}`, url: channel1.link });
+            }
+            const channel2 = CONFIG.channels.mandatory[i + 1];
+            if (channel2) {
+                row.push({ text: `📢 ${channel2.name}`, url: channel2.link });
+            }
+            keyboard.inline_keyboard.push(row);
+        }
+        
+        // Add welcome channel (1 time show)
+        message += `\n🎁 **Bonus Channel (One-time view):**\n`;
+        message += `📢 ${welcome.name}\n\n`;
+        keyboard.inline_keyboard.push([
+            { text: '🎁 View Welcome Channel', url: welcome.link }
+        ]);
+        
+        // Add verify button
+        keyboard.inline_keyboard.push([
+            { text: '✅ I\'ve Joined All Channels', callback_data: 'verify_all_channels' }
+        ]);
         
         await this.bot.sendMessage(
             chatId,
@@ -613,7 +627,47 @@ class UltimateBot {
             }
         );
         
-        addLog(`🎁 Welcome channel shown to user ${userId}`, 'INFO');
+        addLog(`🎁 Welcome with channels shown to user ${userId}`, 'INFO');
+    }
+
+    // ============================================
+    // SHOW MISSING CHANNELS ONLY (2 per row)
+    // ============================================
+
+    async showMissingChannels(chatId, userId, missingChannels) {
+        let message = `🔐 **CHANNEL VERIFICATION REQUIRED**\n\n`;
+        message += `Please join these channels to use the bot:\n\n`;
+        
+        const keyboard = {
+            inline_keyboard: []
+        };
+        
+        // Add missing channels (2 per row)
+        for (let i = 0; i < missingChannels.length; i += 2) {
+            const row = [];
+            const channel1 = missingChannels[i];
+            if (channel1) {
+                row.push({ text: `📢 ${channel1.name}`, url: channel1.link });
+            }
+            const channel2 = missingChannels[i + 1];
+            if (channel2) {
+                row.push({ text: `📢 ${channel2.name}`, url: channel2.link });
+            }
+            keyboard.inline_keyboard.push(row);
+        }
+        
+        keyboard.inline_keyboard.push([
+            { text: '✅ I\'ve Joined All', callback_data: 'verify_all_channels' }
+        ]);
+        
+        await this.bot.sendMessage(
+            chatId,
+            message,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: keyboard
+            }
+        );
     }
 
     // ============================================
@@ -662,15 +716,11 @@ class UltimateBot {
 
     async startReportProcess(chatId, userId, username, targetType) {
         try {
-            const isSubscribed = await this.checkAllSubscriptions(userId);
-            if (!isSubscribed.allSubscribed) {
-                await this.bot.sendMessage(
-                    chatId,
-                    `❌ **CHANNEL VERIFICATION REQUIRED**
-
-Please join all mandatory channels first.`,
-                    { parse_mode: 'Markdown' }
-                );
+            const subStatus = await this.checkAllSubscriptions(userId);
+            
+            // Agar mandatory channels me se koi missing hai
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                 return;
             }
 
@@ -752,15 +802,11 @@ Send the ${typeNames[targetType].toLowerCase()} username or link.
 
     async startProtectionProcess(chatId, userId, username) {
         try {
-            const isSubscribed = await this.checkAllSubscriptions(userId);
-            if (!isSubscribed.allSubscribed) {
-                await this.bot.sendMessage(
-                    chatId,
-                    `❌ **CHANNEL VERIFICATION REQUIRED**
-
-Please join all mandatory channels first.`,
-                    { parse_mode: 'Markdown' }
-                );
+            const subStatus = await this.checkAllSubscriptions(userId);
+            
+            // Agar mandatory channels me se koi missing hai
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                 return;
             }
 
@@ -1265,8 +1311,8 @@ You cannot protect another target.`,
     async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
             // Check if referrer is subscribed
-            const isSubscribed = await this.checkAllSubscriptions(parseInt(referrerId));
-            if (!isSubscribed.allSubscribed) {
+            const subStatus = await this.checkAllSubscriptions(parseInt(referrerId));
+            if (!subStatus.allSubscribed) {
                 addLog(`❌ Referrer ${referrerId} not subscribed, referral denied`, 'WARN');
                 return false;
             }
@@ -1407,49 +1453,24 @@ You cannot protect another target.`,
                 if (!subStatus.allSubscribed) {
                     addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
                     
-                    let message = `🔐 **CHANNEL VERIFICATION REQUIRED**\n\n`;
-                    message += `Please join all these channels to use the bot:\n\n`;
-                    
-                    const keyboard = {
-                        inline_keyboard: []
-                    };
-                    
-                    // Add all mandatory channels
-                    for (const channel of subStatus.missingChannels) {
-                        message += `📢 ${channel.name}\n`;
-                        message += `🔗 ${channel.link}\n\n`;
-                        keyboard.inline_keyboard.push([
-                            { text: `📢 Join ${channel.name}`, url: channel.link }
-                        ]);
-                    }
-                    
-                    keyboard.inline_keyboard.push([
-                        { text: '✅ I\'ve Joined All', callback_data: 'verify_all_channels' }
-                    ]);
-                    
-                    await this.bot.sendMessage(
-                        chatId,
-                        message,
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: keyboard
-                        }
-                    );
-                    
-                    // Welcome channel show karo agar first time hai
-                    if (subStatus.welcome && !user.welcome_channel_shown) {
-                        await this.showWelcomeChannel(chatId, userId);
+                    // Show missing channels with welcome channel (if not shown before)
+                    if (!user.welcome_channel_shown) {
+                        await this.showWelcomeWithChannels(chatId, userId, subStatus.missingChannels);
+                        user.welcome_channel_shown = true;
+                        await user.save();
+                    } else {
+                        await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     }
                     
                     return;
                 }
 
                 // ============================================
-                // SHOW WELCOME CHANNEL (1 TIME - NO CHECK)
+                // SHOW WELCOME CHANNEL WITH MANDATORY CHANNELS (1 TIME - NO CHECK)
                 // ============================================
                 
                 if (!user.welcome_channel_shown) {
-                    await this.showWelcomeChannel(chatId, userId);
+                    await this.showWelcomeWithChannels(chatId, userId, []);
                     user.welcome_channel_shown = true;
                     await user.save();
                 }
@@ -1588,28 +1609,9 @@ Now you can use the bot! Send /start to continue.`,
                             { parse_mode: 'Markdown' }
                         );
                     } else {
-                        let message = `❌ **VERIFICATION FAILED**\n\n`;
-                        message += `You still need to join:\n\n`;
-                        for (const channel of subStatus.missingChannels) {
-                            message += `📢 ${channel.name}\n`;
-                            message += `🔗 ${channel.link}\n\n`;
-                        }
-                        await this.bot.sendMessage(
-                            chatId,
-                            message,
-                            { parse_mode: 'Markdown' }
-                        );
+                        // Show only missing channels
+                        await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     }
-                    await this.bot.answerCallbackQuery(query.id);
-                    return;
-                }
-
-                if (data === 'welcome_done') {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `✅ Welcome channel marked as seen!`,
-                        { parse_mode: 'Markdown' }
-                    );
                     await this.bot.answerCallbackQuery(query.id);
                     return;
                 }
@@ -1729,11 +1731,7 @@ Now you can use the bot! Send /start to continue.`,
             try {
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ Please join all mandatory channels first.`,
-                        { parse_mode: 'Markdown' }
-                    );
+                    await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     return;
                 }
 
@@ -1801,11 +1799,7 @@ ${referralLink}
             try {
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ Please join all mandatory channels first.`,
-                        { parse_mode: 'Markdown' }
-                    );
+                    await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     return;
                 }
 
@@ -2624,11 +2618,7 @@ All payments are processed.`,
             try {
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
-                    await this.bot.sendMessage(
-                        chatId,
-                        `❌ Please join all mandatory channels first.`,
-                        { parse_mode: 'Markdown' }
-                    );
+                    await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     this.conversations.delete(userId);
                     return;
                 }
