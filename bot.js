@@ -48,22 +48,22 @@ const CONFIG = {
                 type: 'channel'
             },
             {
-                id: '-1002004551708',
-                link: 'https://t.me/RTFGAMINGUPDATES',
+                id: '-1003559518526',
+                link: 'https://t.me/rtfgamminggc',
                 name: 'RTF Gaming Updates',
-                type: 'channel'
+                type: 'group'
             },
             {
-                id: '-1001004551709',
-                link: 'https://t.me/RTFCOMMUNITY',
+                id: '-1003880548572',
+                link: 'https://t.me/USERX1NFO',
                 name: 'RTF Community',
                 type: 'group'
             }
         ],
         // 1 Channel - No join check (1 time show)
         welcome: {
-            id: '-1001504551710',
-            link: 'https://t.me/RTFWELCOME',
+            id: '-1004344229003',
+            link: 'https://t.me/+X-s0bMpbnwlmOTM9',
             name: '🎁 RTF Welcome Bonus',
             type: 'channel',
             showOnce: true
@@ -130,7 +130,7 @@ const rateLimiter = new RateLimiterMemory({
 // ============================================
 
 mongoose.connect(CONFIG.mongoUri, {
-    dbName: 'rtf_ban_bot',
+    dbName: 'rtf_ban',
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000
 });
