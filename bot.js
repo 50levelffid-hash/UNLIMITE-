@@ -1,6 +1,6 @@
 // ============================================
-// ULTIMATE BAN BOT v2.0 - FULLY FIXED
-// 4 CHANNELS SYSTEM + REFERRAL
+// ULTIMATE BAN BOT v3.0 - WITH POINTS PURCHASE
+// FULLY WORKING REFERRAL + BUY POINTS
 // ============================================
 
 const TelegramBot = require('node-telegram-bot-api');
@@ -32,7 +32,8 @@ const CONFIG = {
     reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'),
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
     protectionPrice: parseInt(process.env.PROTECTION_PRICE || '40'),
-    referralPerMinute: 2,
+    pointPrice: 2, // ₹2 per point
+    minPointsPurchase: 10, // Minimum 10 points
     protectionExpiryDays: 30,
     
     channels: {
@@ -55,7 +56,6 @@ const CONFIG = {
                 name: 'RTF Community',
                 type: 'group'
             },
-            // ✅ NEW PUBLIC CHANNEL (Replaces welcome channel)
             {
                 id: 'rtfgaming1',
                 link: 'https://t.me/rtfgaming1',
@@ -167,7 +167,11 @@ const UserSchema = new mongoose.Schema({
     transaction_ss: { type: String, default: null },
     protection_expiry: { type: Date, default: null },
     last_referral_time: { type: Date, default: null },
-    referral_count_minute: { type: Number, default: 0 }
+    referral_count_minute: { type: Number, default: 0 },
+    // Points Purchase
+    points_purchase_pending: { type: Number, default: 0 },
+    points_purchase_ss: { type: String, default: null },
+    points_purchase_transaction: { type: String, default: null }
 }, { timestamps: true });
 
 const ReportSchema = new mongoose.Schema({
@@ -218,7 +222,9 @@ const PaymentSchema = new mongoose.Schema({
     amount: { type: Number, default: 40 },
     transaction_id: { type: String, unique: true, index: true },
     transaction_ss: String,
-    protection_type: { type: String, enum: ['account', 'channel', 'group'] },
+    payment_type: { type: String, enum: ['protection', 'points'], default: 'protection' },
+    points: { type: Number, default: 0 },
+    protection_type: { type: String, enum: ['account', 'channel', 'group', 'none'], default: 'none' },
     protection_target: { type: String, default: null },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
     admin_note: String,
@@ -495,13 +501,15 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE BAN BOT v2.0 - 4 CHANNELS SYSTEM', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v3.0 - WITH POINTS PURCHASE', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Mandatory Channels: ${CONFIG.channels.mandatory.length}`, 'INFO');
         addLog(`⚙️ Workers: ${CONFIG.maxWorkers}`, 'INFO');
         addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
         addLog(`🛡️ Protection Price: ₹${CONFIG.protectionPrice}`, 'INFO');
+        addLog(`💰 Points Price: ₹${CONFIG.pointPrice}/point`, 'INFO');
+        addLog(`📊 Min Points Purchase: ${CONFIG.minPointsPurchase}`, 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog('✅ Bot is LIVE!', 'INFO');
         addLog('='.repeat(70), 'INFO');
@@ -513,7 +521,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // CHECK ALL SUBSCRIPTIONS - FIXED ✅
+    // CHECK ALL SUBSCRIPTIONS
     // ============================================
 
     async checkAllSubscriptions(userId) {
@@ -527,17 +535,13 @@ class UltimateBot {
             try {
                 let isMember = false;
                 
-                // For public channels (like rtfgaming1), check differently
                 if (channel.isPublic) {
                     try {
-                        // Try to get chat member for public channel
                         const chatMember = await this.bot.getChatMember(`@${channel.id}`, userId);
                         isMember = chatMember.status === 'member' || 
                                   chatMember.status === 'administrator' || 
                                   chatMember.status === 'creator';
                     } catch (error) {
-                        // If can't check, assume not joined for public channels
-                        // For public channels, we'll show the join button
                         isMember = false;
                     }
                 } else {
@@ -566,7 +570,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // SHOW ALL CHANNELS (4 Channels - 2 per row)
+    // SHOW ALL CHANNELS
     // ============================================
 
     async showAllChannels(chatId, userId, missingChannels = []) {
@@ -577,7 +581,6 @@ class UltimateBot {
             inline_keyboard: []
         };
         
-        // Add all channels (2 per row)
         const allChannels = CONFIG.channels.mandatory;
         for (let i = 0; i < allChannels.length; i += 2) {
             const row = [];
@@ -592,7 +595,6 @@ class UltimateBot {
             keyboard.inline_keyboard.push(row);
         }
         
-        // If specific missing channels, show them separately
         if (missingChannels.length > 0) {
             message += `\n⚠️ You need to join these channels first:\n\n`;
             for (const channel of missingChannels) {
@@ -618,7 +620,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // SHOW MISSING CHANNELS ONLY (2 per row)
+    // SHOW MISSING CHANNELS
     // ============================================
 
     async showMissingChannels(chatId, userId, missingChannels) {
@@ -629,7 +631,6 @@ class UltimateBot {
             inline_keyboard: []
         };
         
-        // Add missing channels (2 per row)
         for (let i = 0; i < missingChannels.length; i += 2) {
             const row = [];
             const channel1 = missingChannels[i];
@@ -657,7 +658,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET MAIN MENU
+    // GET MAIN MENU - WITH BUY POINTS BUTTON
     // ============================================
 
     getMainMenu() {
@@ -677,7 +678,10 @@ class UltimateBot {
                         { text: '🔗 Refer & Earn' }
                     ],
                     [
-                        { text: 'ℹ️ Help' },
+                        { text: '💰 Buy Points' },
+                        { text: 'ℹ️ Help' }
+                    ],
+                    [
                         { text: '👑 Admin Panel' }
                     ]
                 ],
@@ -697,12 +701,11 @@ class UltimateBot {
     }
 
     // ============================================
-    // START REPORT PROCESS - WITH CHANNEL CHECK ✅
+    // START REPORT PROCESS
     // ============================================
 
     async startReportProcess(chatId, userId, username, targetType) {
         try {
-            // ✅ CHECK CHANNELS FIRST
             const subStatus = await this.checkAllSubscriptions(userId);
             
             if (!subStatus.allSubscribed) {
@@ -726,7 +729,7 @@ class UltimateBot {
                 const referralLink = await this.getReferralLink(userId);
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ Insufficient Reports!\n\nNeed ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Earn more: ${referralLink}`
+                    `❌ Insufficient Reports!\n\nNeed ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Earn more: ${referralLink}\n\n💰 Or buy points using "Buy Points" button!`
                 );
                 return;
             }
@@ -768,12 +771,11 @@ class UltimateBot {
     }
 
     // ============================================
-    // START PROTECTION PROCESS - WITH CHANNEL CHECK ✅
+    // START PROTECTION PROCESS
     // ============================================
 
     async startProtectionProcess(chatId, userId, username) {
         try {
-            // ✅ CHECK CHANNELS FIRST
             const subStatus = await this.checkAllSubscriptions(userId);
             
             if (!subStatus.allSubscribed) {
@@ -831,7 +833,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // PROCESS PAYMENT
+    // PROCESS PAYMENT - Protection
     // ============================================
 
     async processPayment(chatId, userId, username, protectionType) {
@@ -861,6 +863,7 @@ class UltimateBot {
                 username: username,
                 amount: CONFIG.protectionPrice,
                 transaction_id: transactionId,
+                payment_type: 'protection',
                 protection_type: protectionType,
                 status: 'pending'
             });
@@ -887,7 +890,7 @@ class UltimateBot {
             this.conversations.set(userId, { 
                 step: 'payment_ss',
                 transactionId: transactionId,
-                protectionType: protectionType
+                paymentType: 'protection'
             });
 
         } catch (error) {
@@ -897,14 +900,119 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE PAYMENT SCREENSHOT
+    // PROCESS POINTS PURCHASE
     // ============================================
 
-    async handlePaymentScreenshot(chatId, userId, username, photo, transactionId, protectionType) {
+    async processPointsPurchase(chatId, userId, username) {
+        try {
+            const user = await User.findOne({ telegram_id: userId.toString() });
+            
+            // Check if user already has pending points purchase
+            if (user && user.points_purchase_pending > 0) {
+                await this.bot.sendMessage(
+                    chatId,
+                    `⏳ You already have a pending points purchase!\n\n📊 Points: ${user.points_purchase_pending}\n💰 Amount: ₹${user.points_purchase_pending * CONFIG.pointPrice}\n\nPlease wait for admin approval or send the screenshot.\n\n📋 If you haven't sent the screenshot yet, please send it now.`
+                );
+                return;
+            }
+
+            const qrCode = await QRCode.findOne({ is_active: true });
+            if (!qrCode) {
+                await this.bot.sendMessage(
+                    chatId,
+                    `❌ Payment System Unavailable\n\nNo payment QR code available. Please contact admin.\n\n👑 Admin: @RTFGAMMING`
+                );
+                return;
+            }
+
+            // Ask how many points they want
+            this.conversations.set(userId, { step: 'points_amount' });
+            
+            await this.bot.sendMessage(
+                chatId,
+                `💰 BUY POINTS\n\n💵 Price: ₹${CONFIG.pointPrice} per point\n📊 Minimum: ${CONFIG.minPointsPurchase} points\n📊 Maximum: No limit\n\n📝 Example: Send "10" for 10 points (₹${CONFIG.pointPrice * 10})\n\n⚠️ Send the number of points you want to buy.\n\nType /cancel to cancel.`
+            );
+
+        } catch (error) {
+            addLog(`❌ Points purchase error: ${error.message}`, 'ERROR');
+            await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
+        }
+    }
+
+    // ============================================
+    // HANDLE POINTS AMOUNT INPUT
+    // ============================================
+
+    async handlePointsAmount(chatId, userId, username, text) {
+        try {
+            const points = parseInt(text);
+            
+            if (isNaN(points) || points < CONFIG.minPointsPurchase) {
+                await this.bot.sendMessage(
+                    chatId,
+                    `❌ Invalid amount!\n\nMinimum points: ${CONFIG.minPointsPurchase}\n\n📝 Example: Send "10" for 10 points (₹${CONFIG.pointPrice * 10})\n\nType /cancel to cancel.`
+                );
+                return;
+            }
+
+            const amount = points * CONFIG.pointPrice;
+            const transactionId = `PTS-${randomstring.generate({length: 10, charset: 'numeric'})}`;
+
+            // Update user with pending points
+            await User.findOneAndUpdate(
+                { telegram_id: userId.toString() },
+                {
+                    points_purchase_pending: points,
+                    points_purchase_transaction: transactionId,
+                    points_purchase_ss: null
+                }
+            );
+
+            // Save payment record
+            const payment = new Payment({
+                user_id: userId.toString(),
+                username: username,
+                amount: amount,
+                transaction_id: transactionId,
+                payment_type: 'points',
+                points: points,
+                status: 'pending'
+            });
+            await payment.save();
+
+            const qrCode = await QRCode.findOne({ is_active: true });
+
+            await this.bot.sendPhoto(
+                chatId,
+                qrCode.file_id,
+                {
+                    caption: `💰 Points Purchase\n\n📊 Points: ${points}\n💵 Amount: ₹${amount}\n🆔 Transaction ID: ${transactionId}\n\n📤 Instructions:\n1. Scan the QR code\n2. Pay ₹${amount}\n3. Send the transaction screenshot here (upload photo)\n4. Wait for admin approval\n\n⚠️ Don't close this chat! Admin will respond here.\n\n✅ After approval, points will be added to your account.`
+                }
+            );
+
+            this.conversations.set(userId, { 
+                step: 'payment_ss',
+                transactionId: transactionId,
+                paymentType: 'points',
+                points: points
+            });
+
+        } catch (error) {
+            addLog(`❌ Points amount error: ${error.message}`, 'ERROR');
+            await this.bot.sendMessage(chatId, '❌ Error. Please try again.');
+        }
+    }
+
+    // ============================================
+    // HANDLE PAYMENT SCREENSHOT (Protection + Points)
+    // ============================================
+
+    async handlePaymentScreenshot(chatId, userId, username, photo, transactionId, paymentType) {
         try {
             const fileId = photo[photo.length - 1].file_id;
             const file = await this.bot.getFile(fileId);
 
+            // Update payment with screenshot
             await Payment.findOneAndUpdate(
                 { transaction_id: transactionId },
                 { 
@@ -914,23 +1022,50 @@ class UltimateBot {
                 }
             );
 
-            await User.findOneAndUpdate(
-                { telegram_id: userId.toString() },
-                { 
-                    protection_status: 'pending_approval',
-                    transaction_ss: fileId
-                }
-            );
+            if (paymentType === 'protection') {
+                await User.findOneAndUpdate(
+                    { telegram_id: userId.toString() },
+                    { 
+                        protection_status: 'pending_approval',
+                        transaction_ss: fileId
+                    }
+                );
 
-            await this.bot.sendMessage(
-                chatId,
-                `✅ Screenshot Received!\n\n📤 Your transaction screenshot has been sent to admin.\n\n⏳ Please wait for admin approval (5-15 minutes).\n\n📋 Transaction ID: ${transactionId}\n\n✅ You will be notified when approved.`
-            );
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ Screenshot Received!\n\n📤 Your transaction screenshot has been sent to admin.\n\n⏳ Please wait for admin approval (5-15 minutes).\n\n📋 Transaction ID: ${transactionId}\n\n✅ You will be notified when approved.`
+                );
+            } else if (paymentType === 'points') {
+                // Points are already stored in user
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ Screenshot Received!\n\n📤 Your points purchase screenshot has been sent to admin.\n\n⏳ Please wait for admin approval (5-15 minutes).\n\n📋 Transaction ID: ${transactionId}\n📊 Points: ${this.conversations.get(userId)?.points || 0}\n\n✅ You will be notified when approved.`
+                );
+            }
 
+            // Forward to admin with approve/reject buttons
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const payment = await Payment.findOne({ transaction_id: transactionId });
                     const user = await User.findOne({ telegram_id: userId.toString() });
+
+                    let caption = `📤 Transaction Screenshot Received\n\n`;
+                    caption += `👤 User: @${username}\n`;
+                    caption += `🆔 User ID: ${userId}\n`;
+
+                    if (paymentType === 'protection') {
+                        caption += `📋 Type: PROTECTION\n`;
+                        caption += `🛡️ Protection Type: ${payment.protection_type.toUpperCase()}\n`;
+                        caption += `💰 Amount: ₹${payment.amount}\n`;
+                    } else if (paymentType === 'points') {
+                        caption += `📋 Type: POINTS PURCHASE\n`;
+                        caption += `📊 Points: ${payment.points}\n`;
+                        caption += `💰 Amount: ₹${payment.amount}\n`;
+                        caption += `💵 Price: ₹${CONFIG.pointPrice}/point\n`;
+                    }
+
+                    caption += `🆔 Transaction: ${transactionId}\n\n`;
+                    caption += `📌 Approve or Reject:`;
 
                     const keyboard = {
                         inline_keyboard: [
@@ -943,7 +1078,7 @@ class UltimateBot {
                         adminId,
                         fileId,
                         {
-                            caption: `📤 Transaction Screenshot Received\n\n👤 User: @${username}\n🆔 User ID: ${userId}\n💰 Amount: ₹${CONFIG.protectionPrice}\n📋 Type: ${protectionType.toUpperCase()}\n🆔 Transaction: ${transactionId}\n\n📌 Approve or Reject:`,
+                            caption: caption,
                             reply_markup: keyboard
                         }
                     );
@@ -961,7 +1096,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE PAYMENT APPROVAL
+    // HANDLE PAYMENT APPROVAL (Protection + Points)
     // ============================================
 
     async handlePaymentApproval(chatId, adminId, transactionId, approve) {
@@ -990,43 +1125,87 @@ class UltimateBot {
                 payment.status = 'approved';
                 await payment.save();
 
-                user.protection_status = 'approved';
-                user.protection_type = payment.protection_type;
-                user.transaction_id = transactionId;
-                await user.save();
+                if (payment.payment_type === 'protection') {
+                    // Protection approval
+                    user.protection_status = 'approved';
+                    user.protection_type = payment.protection_type;
+                    user.transaction_id = transactionId;
+                    await user.save();
 
-                try {
+                    try {
+                        await this.bot.sendMessage(
+                            parseInt(payment.user_id),
+                            `✅ Payment Approved!\n\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n🎯 Now you can protect your target!\n\nSend the @username or link you want to protect.\n\n📝 Example: @username or https://t.me/channelname\n\n⚠️ You have one protection available.`
+                        );
+                    } catch (e) {}
+
                     await this.bot.sendMessage(
-                        parseInt(payment.user_id),
-                        `✅ Payment Approved!\n\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n🎯 Now you can protect your target!\n\nSend the @username or link you want to protect.\n\n📝 Example: @username or https://t.me/channelname\n\n⚠️ You have one protection available.`
+                        chatId,
+                        `✅ Protection Payment Approved!\n\n👤 User: @${user.username}\n💰 Amount: ₹${payment.amount}\n📋 Type: ${payment.protection_type.toUpperCase()}\n🆔 Transaction: ${transactionId}\n\nUser has been notified to send target.`
                     );
-                } catch (e) {}
 
-                await this.bot.sendMessage(
-                    chatId,
-                    `✅ Payment Approved!\n\n👤 User: @${user.username}\n💰 Amount: ₹${payment.amount}\n📋 Type: ${payment.protection_type.toUpperCase()}\n🆔 Transaction: ${transactionId}\n\nUser has been notified to send target.`
-                );
+                } else if (payment.payment_type === 'points') {
+                    // Points purchase approval
+                    user.points += payment.points;
+                    user.points_purchase_pending = 0;
+                    user.points_purchase_transaction = null;
+                    user.points_purchase_ss = null;
+                    await user.save();
+
+                    try {
+                        await this.bot.sendMessage(
+                            parseInt(payment.user_id),
+                            `✅ Points Purchase Approved!\n\n📊 Points: ${payment.points}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n⭐ Total Points: ${user.points}\n\n📊 ${CONFIG.refersForReport} points = 1 report\n🎯 ${CONFIG.reportsPerTarget} reports = 99.99% ban\n\n🔥 Start reporting now!`
+                        );
+                    } catch (e) {}
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ Points Purchase Approved!\n\n👤 User: @${user.username}\n📊 Points Added: ${payment.points}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n⭐ Total Points: ${user.points}`
+                    );
+                }
 
             } else {
+                // Reject payment
                 payment.status = 'rejected';
                 await payment.save();
 
-                user.protection_status = 'none';
-                user.protection_type = 'none';
-                user.transaction_id = null;
-                await user.save();
+                if (payment.payment_type === 'protection') {
+                    user.protection_status = 'none';
+                    user.protection_type = 'none';
+                    user.transaction_id = null;
+                    await user.save();
 
-                try {
+                    try {
+                        await this.bot.sendMessage(
+                            parseInt(payment.user_id),
+                            `❌ Payment Rejected!\n\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n❌ Your payment was rejected. Please try again.\n\n📤 Send /start to try again.`
+                        );
+                    } catch (e) {}
+
                     await this.bot.sendMessage(
-                        parseInt(payment.user_id),
-                        `❌ Payment Rejected!\n\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n❌ Your payment was rejected. Please try again.\n\n📤 Send /start to try again.`
+                        chatId,
+                        `✅ Protection Payment Rejected!\n\n👤 User: @${user.username}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\nUser has been notified.`
                     );
-                } catch (e) {}
 
-                await this.bot.sendMessage(
-                    chatId,
-                    `✅ Payment Rejected!\n\n👤 User: @${user.username}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\nUser has been notified.`
-                );
+                } else if (payment.payment_type === 'points') {
+                    user.points_purchase_pending = 0;
+                    user.points_purchase_transaction = null;
+                    user.points_purchase_ss = null;
+                    await user.save();
+
+                    try {
+                        await this.bot.sendMessage(
+                            parseInt(payment.user_id),
+                            `❌ Points Purchase Rejected!\n\n📊 Points: ${payment.points}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n❌ Your payment was rejected. Please try again.\n\n📤 Send /start to try again.`
+                        );
+                    } catch (e) {}
+
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ Points Purchase Rejected!\n\n👤 User: @${user.username}\n📊 Points: ${payment.points}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\nUser has been notified.`
+                    );
+                }
             }
 
         } catch (error) {
@@ -1124,16 +1303,15 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE REFERRAL - FULLY WORKING ✅
+    // HANDLE REFERRAL - FULLY FIXED (No Limit)
     // ============================================
 
     async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
-            // ✅ Check if referrer is subscribed to ALL channels
+            // Check if referrer is subscribed to ALL channels
             const subStatus = await this.checkAllSubscriptions(parseInt(referrerId));
             if (!subStatus.allSubscribed) {
                 addLog(`❌ Referrer ${referrerId} not subscribed to all channels, referral denied`, 'WARN');
-                // Notify referrer they need to join channels
                 try {
                     await this.bot.sendMessage(
                         parseInt(referrerId),
@@ -1149,24 +1327,12 @@ class UltimateBot {
                 return false;
             }
 
-            // Rate limit check (2 per minute)
-            const now = new Date();
-            const oneMinuteAgo = new Date(now.getTime() - 60000);
+            // ✅ REMOVED: No rate limit, no per-minute restriction
+            // Users can refer as many as they want
 
-            if (!referrer.last_referral_time || referrer.last_referral_time < oneMinuteAgo) {
-                referrer.referral_count_minute = 0;
-            }
-
-            if (referrer.referral_count_minute >= CONFIG.referralPerMinute) {
-                addLog(`⚠️ Referral rate limit hit for @${referrer.username}`, 'WARN');
-                return false;
-            }
-
-            // ✅ Add points
+            // Add points
             referrer.points += 1;
             referrer.referrals += 1;
-            referrer.referral_count_minute += 1;
-            referrer.last_referral_time = now;
             await referrer.save();
 
             // Update analytics
@@ -1185,7 +1351,7 @@ class UltimateBot {
                 const newName = newUserUsername || `@${newUser?.username || 'user'}`;
                 await this.bot.sendMessage(
                     parseInt(referrerId),
-                    `🎉 New Referral!\n\n👤 ${newName} joined using your referral link!\n⭐ You earned 1 point!\n📊 Total Points: ${referrer.points}\n\n🔗 Keep sharing: ${referralLink}`
+                    `🎉 New Referral!\n\n👤 ${newName} joined using your referral link!\n⭐ You earned 1 point!\n📊 Total Points: ${referrer.points}\n\n🔗 Keep sharing: ${referralLink}\n\n💡 ${CONFIG.refersForReport} points = 1 report\n🎯 ${CONFIG.reportsPerTarget} reports = 99.99% ban`
                 );
             } catch (e) {
                 addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
@@ -1219,7 +1385,7 @@ class UltimateBot {
 
     setupCommands() {
         // ============================================
-        // START COMMAND - FIXED ✅
+        // START COMMAND
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1247,31 +1413,20 @@ class UltimateBot {
                         referral_code: referralCodeGen,
                         is_verified: false,
                         protection_status: 'none',
-                        welcome_channel_shown: false
+                        welcome_channel_shown: false,
+                        points_purchase_pending: 0
                     });
                     await user.save();
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
-                // ============================================
-                // CHECK SUBSCRIPTIONS - ALL 4 CHANNELS
-                // ============================================
-
                 const subStatus = await this.checkAllSubscriptions(userId);
                 
-                // Agar koi channel missing hai
                 if (!subStatus.allSubscribed) {
                     addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
-                    
-                    // Show all channels with missing ones highlighted
                     await this.showAllChannels(chatId, userId, subStatus.missingChannels);
-                    
                     return;
                 }
-
-                // ============================================
-                // PROCESS REFERRAL - ✅ FULLY WORKING
-                // ============================================
 
                 if (isNewUser && referralCode) {
                     let referrerId = null;
@@ -1306,10 +1461,6 @@ class UltimateBot {
                     }
                 }
 
-                // ============================================
-                // UPDATE USER VERIFICATION
-                // ============================================
-
                 if (!user.is_verified) {
                     user.is_verified = true;
                     await user.save();
@@ -1339,8 +1490,7 @@ class UltimateBot {
 
                 const referralLink = await this.getReferralLink(userId);
 
-                // ✅ FIXED: NO Markdown - Plain text only
-                const welcomeMessage = `🔥 ULTIMATE BAN BOT v2.0
+                const welcomeMessage = `🔥 ULTIMATE BAN BOT v3.0
 
 🌟 Your Stats:
 • Points: ${points} ⭐
@@ -1354,8 +1504,14 @@ class UltimateBot {
 • 3 Report Types: Account, Channel, Group
 • 🛡️ Protection System
 
+💰 Points Purchase:
+• ₹${CONFIG.pointPrice} per point
+• Minimum: ${CONFIG.minPointsPurchase} points
+• Use "Buy Points" button
+
 🔗 Referral System:
 • ${CONFIG.refersForReport} points = 1 report
+• ${CONFIG.reportsPerTarget} reports = 99.99% ban
 • Share: ${referralLink}
 
 💡 Select a report type below to start!
@@ -1386,7 +1542,6 @@ class UltimateBot {
 
             try {
                 if (data === 'verify_all_channels') {
-                    // ✅ Re-check all channels
                     const subStatus = await this.checkAllSubscriptions(userId);
                     
                     if (subStatus.allSubscribed) {
@@ -1401,7 +1556,6 @@ class UltimateBot {
                             `✅ VERIFICATION SUCCESSFUL!\n\nNow you can use the bot! Send /start to continue.`
                         );
                     } else {
-                        // Show only missing channels
                         await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     }
                     await this.bot.answerCallbackQuery(query.id);
@@ -1446,7 +1600,27 @@ class UltimateBot {
         });
 
         // ============================================
-        // PROTECTION BUTTON - WITH CHANNEL CHECK ✅
+        // BUY POINTS BUTTON
+        // ============================================
+
+        this.bot.onText(/💰 Buy Points/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+            const username = msg.from.username || 'unknown';
+
+            addLog(`💰 Buy Points clicked by @${username} (${userId})`, 'INFO');
+            
+            const subStatus = await this.checkAllSubscriptions(userId);
+            if (!subStatus.allSubscribed) {
+                await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
+                return;
+            }
+            
+            await this.processPointsPurchase(chatId, userId, username);
+        });
+
+        // ============================================
+        // PROTECTION BUTTON
         // ============================================
 
         this.bot.onText(/🛡️ Protection/, async (msg) => {
@@ -1456,7 +1630,6 @@ class UltimateBot {
 
             addLog(`🛡️ Protection clicked by @${username} (${userId})`, 'INFO');
             
-            // ✅ Check channels first
             const subStatus = await this.checkAllSubscriptions(userId);
             if (!subStatus.allSubscribed) {
                 await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1467,7 +1640,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // REPORT ACCOUNT BUTTON - WITH CHANNEL CHECK ✅
+        // REPORT ACCOUNT BUTTON
         // ============================================
 
         this.bot.onText(/🎯 Report Account/, async (msg) => {
@@ -1477,7 +1650,6 @@ class UltimateBot {
 
             addLog(`🎯 Report Account clicked by @${username} (${userId})`, 'INFO');
             
-            // ✅ Check channels first
             const subStatus = await this.checkAllSubscriptions(userId);
             if (!subStatus.allSubscribed) {
                 await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1488,7 +1660,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // REPORT CHANNEL BUTTON - WITH CHANNEL CHECK ✅
+        // REPORT CHANNEL BUTTON
         // ============================================
 
         this.bot.onText(/📢 Report Channel/, async (msg) => {
@@ -1498,7 +1670,6 @@ class UltimateBot {
 
             addLog(`📢 Report Channel clicked by @${username} (${userId})`, 'INFO');
             
-            // ✅ Check channels first
             const subStatus = await this.checkAllSubscriptions(userId);
             if (!subStatus.allSubscribed) {
                 await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1509,7 +1680,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // REPORT GROUP BUTTON - WITH CHANNEL CHECK ✅
+        // REPORT GROUP BUTTON
         // ============================================
 
         this.bot.onText(/👥 Report Group/, async (msg) => {
@@ -1519,7 +1690,6 @@ class UltimateBot {
 
             addLog(`👥 Report Group clicked by @${username} (${userId})`, 'INFO');
             
-            // ✅ Check channels first
             const subStatus = await this.checkAllSubscriptions(userId);
             if (!subStatus.allSubscribed) {
                 await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1544,7 +1714,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // MY STATS - WITH CHANNEL CHECK ✅
+        // MY STATS
         // ============================================
 
         this.bot.onText(/📊 My Stats/, async (msg) => {
@@ -1552,7 +1722,6 @@ class UltimateBot {
             const userId = msg.from.id;
 
             try {
-                // ✅ Check channels first
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1602,6 +1771,11 @@ class UltimateBot {
 🔗 Referral Link:
 ${referralLink}
 
+💰 Points Purchase:
+• ₹${CONFIG.pointPrice} per point
+• Minimum: ${CONFIG.minPointsPurchase} points
+• Use "Buy Points" button
+
 💡 Higher Evidence = Higher Ban Chance!`;
 
                 await this.bot.sendMessage(chatId, statsMessage);
@@ -1613,7 +1787,7 @@ ${referralLink}
         });
 
         // ============================================
-        // REFER & EARN - WITH CHANNEL CHECK ✅
+        // REFER & EARN - FIXED
         // ============================================
 
         this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
@@ -1621,7 +1795,6 @@ ${referralLink}
             const userId = msg.from.id;
 
             try {
-                // ✅ Check channels first
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1647,10 +1820,12 @@ ${referralLink}
 🎯 How it works:
 1. Share your referral link
 2. Each new user = 1 point
-3. ${CONFIG.refersForReport} points = 1 report
-4. ${CONFIG.reportsPerTarget} reports = 99.99% ban
+3. ${CONFIG.refersForReport} points = 1 report (${CONFIG.reportsPerTarget} reports for 99.99% ban)
+4. No limit on referrals!
 
 ⚠️ Important: You must stay subscribed to ALL channels to earn points!
+
+💰 Or buy points using "Buy Points" button!
 
 🔗 Your Referral Link:
 ${referralLink}`;
@@ -1688,11 +1863,19 @@ ${referralLink}`;
 6. Send the target you want to protect
 7. Target is protected for ${CONFIG.protectionExpiryDays} days!
 
-💰 Price: ₹${CONFIG.protectionPrice}
+💰 Points Purchase System:
+1. Click "💰 Buy Points"
+2. Enter number of points (minimum ${CONFIG.minPointsPurchase})
+3. ₹${CONFIG.pointPrice} per point
+4. Pay via QR code
+5. Send screenshot
+6. Admin approves
+7. Points added to your account!
 
 📊 Points System:
 • ${CONFIG.refersForReport} points = 1 report
 • Refer others to earn points
+• No limit on referrals!
 
 📤 Evidence Guide (Important!):
 
@@ -1739,6 +1922,7 @@ No Evidence (Skip) | 5%
             const stats = await this.getAdminStats();
             const protectedCount = await Protected.countDocuments();
             const pendingPayments = await Payment.countDocuments({ status: 'pending' });
+            const pendingPoints = await User.countDocuments({ points_purchase_pending: { $gt: 0 } });
 
             const adminMessage = `👑 Admin Panel
 
@@ -1748,6 +1932,7 @@ No Evidence (Skip) | 5%
 • Queue: ${this.queue.length}
 • Protected: ${protectedCount}
 • Pending Payments: ${pendingPayments}
+• Pending Points Purchases: ${pendingPoints}
 
 🔧 Commands:
 • /addpoints @username 5 - Add points
@@ -2169,6 +2354,10 @@ No Evidence (Skip) | 5%
 📢 Channels:
 • Mandatory: ${CONFIG.channels.mandatory.length}
 
+💰 Points Purchase:
+• Price: ₹${CONFIG.pointPrice}/point
+• Minimum: ${CONFIG.minPointsPurchase} points
+
 📊 Recent Analytics:\n`;
             
             const analytics = await Analytics.find().sort({ date: -1 }).limit(5);
@@ -2290,8 +2479,13 @@ No Evidence (Skip) | 5%
                 for (const p of payments) {
                     paymentMessage += `🆔 ${p.transaction_id}\n`;
                     paymentMessage += `👤 @${p.username || 'unknown'}\n`;
-                    paymentMessage += `💰 ₹${p.amount}\n`;
-                    paymentMessage += `📋 ${p.protection_type.toUpperCase()}\n`;
+                    paymentMessage += `📋 Type: ${p.payment_type.toUpperCase()}\n`;
+                    if (p.payment_type === 'protection') {
+                        paymentMessage += `🛡️ Protection: ${p.protection_type.toUpperCase()}\n`;
+                    } else if (p.payment_type === 'points') {
+                        paymentMessage += `📊 Points: ${p.points}\n`;
+                    }
+                    paymentMessage += `💰 Amount: ₹${p.amount}\n`;
                     paymentMessage += `📅 ${moment(p.created_at).fromNow()}\n`;
                     paymentMessage += `---\n`;
                 }
@@ -2329,6 +2523,7 @@ No Evidence (Skip) | 5%
             if (text && text.startsWith('🔗')) return;
             if (text && text.startsWith('ℹ️')) return;
             if (text && text.startsWith('👑')) return;
+            if (text && text.startsWith('💰')) return;
             if (text && text.startsWith('❌')) return;
 
             const conversation = this.conversations.get(userId);
@@ -2337,7 +2532,6 @@ No Evidence (Skip) | 5%
             addLog(`📥 Message from @${username}: ${text || 'Media'}`, 'INFO');
 
             try {
-                // ✅ CHECK CHANNELS FIRST
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -2358,6 +2552,15 @@ No Evidence (Skip) | 5%
                     addLog(`🚫 Banned user @${username} tried to use bot`, 'WARN');
                     await this.bot.sendMessage(chatId, '❌ You are banned from using this bot.');
                     this.conversations.delete(userId);
+                    return;
+                }
+
+                // ============================================
+                // POINTS AMOUNT INPUT
+                // ============================================
+
+                if (conversation.step === 'points_amount') {
+                    await this.handlePointsAmount(chatId, userId, username, text);
                     return;
                 }
 
@@ -2559,12 +2762,12 @@ Skip Evidence | 5%
                 }
 
                 // ============================================
-                // PAYMENT SCREENSHOT
+                // PAYMENT SCREENSHOT (Protection + Points)
                 // ============================================
 
                 else if (conversation.step === 'payment_ss') {
                     const transactionId = conversation.transactionId;
-                    const protectionType = conversation.protectionType;
+                    const paymentType = conversation.paymentType || 'protection';
 
                     if (!photo) {
                         await this.bot.sendMessage(
@@ -2574,7 +2777,7 @@ Skip Evidence | 5%
                         return;
                     }
 
-                    await this.handlePaymentScreenshot(chatId, userId, username, photo, transactionId, protectionType);
+                    await this.handlePaymentScreenshot(chatId, userId, username, photo, transactionId, paymentType);
                 }
 
                 // ============================================
@@ -2626,7 +2829,7 @@ Skip Evidence | 5%
 
                         await this.bot.sendMessage(
                             chatId,
-                            `✅ QR Code Added Successfully!\n\n💰 Amount: ₹${CONFIG.protectionPrice}\n\nThis QR code will be shown to users for protection payments.`
+                            `✅ QR Code Added Successfully!\n\n💰 Amount: ₹${CONFIG.protectionPrice}\n\nThis QR code will be shown to users for protection payments and points purchase.`
                         );
 
                         this.conversations.delete(userId);
@@ -3029,7 +3232,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '2.0',
+        version: '3.0',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
