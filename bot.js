@@ -1820,7 +1820,7 @@ ${referralLink}
 🎯 How it works:
 1. Share your referral link
 2. Each new user = 1 point
-3. ${CONFIG.refersForReport} points = 1 report (${CONFIG.reportsPerTarget} reports for 99.99% ban)
+3. ${CONFIG.refersForReport} points = 100 report (${CONFIG.reportsPerTarget} reports for 99.99% ban)
 4. No limit on referrals!
 
 ⚠️ Important: You must stay subscribed to ALL channels to earn points!
