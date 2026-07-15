@@ -24,7 +24,7 @@ dotenv.config();
 
 const CONFIG = {
     token: process.env.BOT_TOKEN || '8887495397:AAFuzTxeiwqQ_fBYN0qCVwq4T-cYVWtt7pI',
-    adminIds: JSON.parse(process.env.ADMIN_IDS || '[123456789]'),
+    adminIds: JSON.parse(process.env.ADMIN_IDS || '[6346250222]'),
     mongoUri: process.env.MONGODB_URI || 'mongodb+srv://sahajada07x:Apon07@sahajada.a8r2wdp.mongodb.net/?appName=Sahajada',
     port: parseInt(process.env.PORT || '10000'),
     refersForReport: parseInt(process.env.REFERS_FOR_REPORT || '5'),
@@ -35,11 +35,7 @@ const CONFIG = {
     referralPerMinute: 2,
     protectionExpiryDays: 30,
     
-    // ============================================
-    // CHANNELS CONFIGURATION - ADMIN PANEL SE ADD KAR SAKTE HAIN
-    // ============================================
     channels: {
-        // 3 Channels with join check (mandatory)
         mandatory: [
             {
                 id: '-1003004551707',
@@ -60,7 +56,6 @@ const CONFIG = {
                 type: 'group'
             }
         ],
-        // 1 Channel - No join check (1 time show)
         welcome: {
             id: '-1004344229003',
             link: 'https://t.me/+X-s0bMpbnwlmOTM9',
@@ -529,7 +524,6 @@ class UltimateBot {
             missingChannels: []
         };
         
-        // Check mandatory channels (3 channels)
         for (const channel of CONFIG.channels.mandatory) {
             try {
                 const chatMember = await this.bot.getChatMember(parseInt(channel.id), userId);
@@ -552,7 +546,6 @@ class UltimateBot {
             }
         }
         
-        // Check welcome channel (NO join check - sirf show karna hai)
         const user = await User.findOne({ telegram_id: userId.toString() });
         if (user && !user.welcome_channel_shown) {
             results.welcome = CONFIG.channels.welcome;
@@ -585,14 +578,14 @@ class UltimateBot {
         
         if (!welcome) return;
         
-        let message = `🎁 **WELCOME TO ULTIMATE BAN BOT!**\n\n`;
-        message += `🔥 **Please join these channels to use the bot:**\n\n`;
+        // ✅ FIXED: Removed Markdown to avoid parsing errors
+        let message = `🎁 WELCOME TO ULTIMATE BAN BOT!\n\n`;
+        message += `🔥 Please join these channels to use the bot:\n\n`;
         
         const keyboard = {
             inline_keyboard: []
         };
         
-        // Add all mandatory channels (2 per row)
         for (let i = 0; i < CONFIG.channels.mandatory.length; i += 2) {
             const row = [];
             const channel1 = CONFIG.channels.mandatory[i];
@@ -606,14 +599,12 @@ class UltimateBot {
             keyboard.inline_keyboard.push(row);
         }
         
-        // Add welcome channel (1 time show)
-        message += `\n🎁 **Bonus Channel (One-time view):**\n`;
+        message += `\n🎁 Bonus Channel (One-time view):\n`;
         message += `📢 ${welcome.name}\n\n`;
         keyboard.inline_keyboard.push([
             { text: '🎁 View Welcome Channel', url: welcome.link }
         ]);
         
-        // Add verify button
         keyboard.inline_keyboard.push([
             { text: '✅ I\'ve Joined All Channels', callback_data: 'verify_all_channels' }
         ]);
@@ -622,7 +613,6 @@ class UltimateBot {
             chatId,
             message,
             {
-                parse_mode: 'Markdown',
                 reply_markup: keyboard
             }
         );
@@ -635,14 +625,14 @@ class UltimateBot {
     // ============================================
 
     async showMissingChannels(chatId, userId, missingChannels) {
-        let message = `🔐 **CHANNEL VERIFICATION REQUIRED**\n\n`;
+        // ✅ FIXED: Removed Markdown to avoid parsing errors
+        let message = `🔐 CHANNEL VERIFICATION REQUIRED\n\n`;
         message += `Please join these channels to use the bot:\n\n`;
         
         const keyboard = {
             inline_keyboard: []
         };
         
-        // Add missing channels (2 per row)
         for (let i = 0; i < missingChannels.length; i += 2) {
             const row = [];
             const channel1 = missingChannels[i];
@@ -664,7 +654,6 @@ class UltimateBot {
             chatId,
             message,
             {
-                parse_mode: 'Markdown',
                 reply_markup: keyboard
             }
         );
@@ -718,7 +707,6 @@ class UltimateBot {
         try {
             const subStatus = await this.checkAllSubscriptions(userId);
             
-            // Agar mandatory channels me se koi missing hai
             if (!subStatus.allSubscribed) {
                 await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                 return;
@@ -740,13 +728,7 @@ class UltimateBot {
                 const referralLink = await this.getReferralLink(userId);
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ **Insufficient Reports!**
-
-Need ${CONFIG.refersForReport} points for 1 report.
-Current points: ${points}
-
-🔗 Earn more: ${referralLink}`,
-                    { parse_mode: 'Markdown' }
+                    `❌ Insufficient Reports!\n\nNeed ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Earn more: ${referralLink}`
                 );
                 return;
             }
@@ -771,17 +753,8 @@ Current points: ${points}
 
             await this.bot.sendMessage(
                 chatId,
-                `🎯 **Report ${typeNames[targetType]}**
-
-Send the ${typeNames[targetType].toLowerCase()} username or link.
-
-📝 Example: ${typeExamples[targetType]}
-
-⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!
-
-💡 /help for more info`,
+                `🎯 Report ${typeNames[targetType]}\n\nSend the ${typeNames[targetType].toLowerCase()} username or link.\n\n📝 Example: ${typeExamples[targetType]}\n\n⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!\n\n💡 /help for more info`,
                 {
-                    parse_mode: 'Markdown',
                     reply_markup: {
                         keyboard: [['❌ Cancel']],
                         resize_keyboard: true,
@@ -804,7 +777,6 @@ Send the ${typeNames[targetType].toLowerCase()} username or link.
         try {
             const subStatus = await this.checkAllSubscriptions(userId);
             
-            // Agar mandatory channels me se koi missing hai
             if (!subStatus.allSubscribed) {
                 await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                 return;
@@ -816,43 +788,26 @@ Send the ${typeNames[targetType].toLowerCase()} username or link.
                 return;
             }
 
-            // Check if user already has active protection
             if (user.protection_status === 'active') {
                 const protectedItem = await Protected.findOne({ protected_by: userId.toString() });
                 if (protectedItem) {
                     await this.bot.sendMessage(
                         chatId,
-                        `🛡️ **You already have active protection!**
-
-📋 Type: ${protectedItem.target_type.toUpperCase()}
-🎯 Target: ${protectedItem.target_name}
-📅 Expiry: ${protectedItem.expiry_date ? moment(protectedItem.expiry_date).format('DD MMM YYYY') : 'Never'}
-
-✅ Your target is already protected!`,
-                        { parse_mode: 'Markdown' }
+                        `🛡️ You already have active protection!\n\n📋 Type: ${protectedItem.target_type.toUpperCase()}\n🎯 Target: ${protectedItem.target_name}\n📅 Expiry: ${protectedItem.expiry_date ? moment(protectedItem.expiry_date).format('DD MMM YYYY') : 'Never'}\n\n✅ Your target is already protected!`
                     );
                     return;
                 }
             }
 
-            // If user has approved payment but not yet protected target, guide them
             if (user.protection_status === 'approved') {
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Payment Approved!**
-
-Now send the @username or link you want to protect.
-
-📝 Example: @username or https://t.me/channelname
-
-⚠️ You have one protection available.`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Payment Approved!\n\nNow send the @username or link you want to protect.\n\n📝 Example: @username or https://t.me/channelname\n\n⚠️ You have one protection available.`
                 );
                 this.conversations.set(userId, { step: 'protection_target' });
                 return;
             }
 
-            // Show protection type selection
             const keyboard = {
                 inline_keyboard: [
                     [{ text: '🛡️ Protect Account', callback_data: 'protect_account' }],
@@ -864,19 +819,8 @@ Now send the @username or link you want to protect.
 
             await this.bot.sendMessage(
                 chatId,
-                `🛡️ **Protection System**
-
-Select what you want to protect:
-
-🛡️ **Account** - Protect any Telegram account
-📢 **Channel** - Protect any Telegram channel
-👥 **Group** - Protect any Telegram group
-
-💰 **Price:** ₹${CONFIG.protectionPrice}
-
-💡 After payment, you'll be able to protect one target.`,
+                `🛡️ Protection System\n\nSelect what you want to protect:\n\n🛡️ Account - Protect any Telegram account\n📢 Channel - Protect any Telegram channel\n👥 Group - Protect any Telegram group\n\n💰 Price: ₹${CONFIG.protectionPrice}\n\n💡 After payment, you'll be able to protect one target.`,
                 {
-                    parse_mode: 'Markdown',
                     reply_markup: keyboard
                 }
             );
@@ -893,39 +837,26 @@ Select what you want to protect:
 
     async processPayment(chatId, userId, username, protectionType) {
         try {
-            // Check if user already has pending payment
             const user = await User.findOne({ telegram_id: userId.toString() });
             if (user && (user.protection_status === 'pending_payment' || user.protection_status === 'pending_approval')) {
                 await this.bot.sendMessage(
                     chatId,
-                    `⏳ **You already have a pending payment!**
-
-Please wait for admin approval or send the transaction screenshot.
-
-📋 If you haven't sent the screenshot yet, please send it now.`,
-                    { parse_mode: 'Markdown' }
+                    `⏳ You already have a pending payment!\n\nPlease wait for admin approval or send the transaction screenshot.\n\n📋 If you haven't sent the screenshot yet, please send it now.`
                 );
                 return;
             }
 
-            // Get active QR code
             const qrCode = await QRCode.findOne({ is_active: true });
             if (!qrCode) {
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ **Payment System Unavailable**
-
-No payment QR code available. Please contact admin.
-
-👑 Admin: @RTFGAMMING`,
-                    { parse_mode: 'Markdown' }
+                    `❌ Payment System Unavailable\n\nNo payment QR code available. Please contact admin.\n\n👑 Admin: @RTFGAMMING`
                 );
                 return;
             }
 
             const transactionId = `TXN-${randomstring.generate({length: 10, charset: 'numeric'})}`;
             
-            // Save payment record
             const payment = new Payment({
                 user_id: userId.toString(),
                 username: username,
@@ -936,7 +867,6 @@ No payment QR code available. Please contact admin.
             });
             await payment.save();
 
-            // Update user
             await User.findOneAndUpdate(
                 { telegram_id: userId.toString() },
                 { 
@@ -947,31 +877,14 @@ No payment QR code available. Please contact admin.
                 }
             );
 
-            // Send QR code with payment instructions
             await this.bot.sendPhoto(
                 chatId,
                 qrCode.file_id,
                 {
-                    caption: `💳 **Payment Required**
-
-💰 Amount: ₹${CONFIG.protectionPrice}
-🆔 Transaction ID: ${transactionId}
-📋 Type: ${protectionType.toUpperCase()}
-
-📤 **Instructions:**
-1. Scan the QR code
-2. Pay ₹${CONFIG.protectionPrice}
-3. **Send the transaction screenshot here** (upload photo)
-4. Wait for admin approval
-
-⚠️ **Don't close this chat!** Admin will respond here.
-
-✅ After approval, you can protect your target.`,
-                    parse_mode: 'Markdown'
+                    caption: `💳 Payment Required\n\n💰 Amount: ₹${CONFIG.protectionPrice}\n🆔 Transaction ID: ${transactionId}\n📋 Type: ${protectionType.toUpperCase()}\n\n📤 Instructions:\n1. Scan the QR code\n2. Pay ₹${CONFIG.protectionPrice}\n3. Send the transaction screenshot here (upload photo)\n4. Wait for admin approval\n\n⚠️ Don't close this chat! Admin will respond here.\n\n✅ After approval, you can protect your target.`
                 }
             );
 
-            // Set conversation state to wait for screenshot
             this.conversations.set(userId, { 
                 step: 'payment_ss',
                 transactionId: transactionId,
@@ -990,11 +903,9 @@ No payment QR code available. Please contact admin.
 
     async handlePaymentScreenshot(chatId, userId, username, photo, transactionId, protectionType) {
         try {
-            // Get file_id
             const fileId = photo[photo.length - 1].file_id;
             const file = await this.bot.getFile(fileId);
 
-            // Update payment with screenshot
             await Payment.findOneAndUpdate(
                 { transaction_id: transactionId },
                 { 
@@ -1004,7 +915,6 @@ No payment QR code available. Please contact admin.
                 }
             );
 
-            // Update user
             await User.findOneAndUpdate(
                 { telegram_id: userId.toString() },
                 { 
@@ -1013,22 +923,11 @@ No payment QR code available. Please contact admin.
                 }
             );
 
-            // Notify user
             await this.bot.sendMessage(
                 chatId,
-                `✅ **Screenshot Received!**
-
-📤 Your transaction screenshot has been sent to admin.
-
-⏳ Please wait for admin approval (5-15 minutes).
-
-📋 Transaction ID: ${transactionId}
-
-✅ You will be notified when approved.`,
-                { parse_mode: 'Markdown' }
+                `✅ Screenshot Received!\n\n📤 Your transaction screenshot has been sent to admin.\n\n⏳ Please wait for admin approval (5-15 minutes).\n\n📋 Transaction ID: ${transactionId}\n\n✅ You will be notified when approved.`
             );
 
-            // Forward to admin with approve/reject buttons
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const payment = await Payment.findOne({ transaction_id: transactionId });
@@ -1045,16 +944,7 @@ No payment QR code available. Please contact admin.
                         adminId,
                         fileId,
                         {
-                            caption: `📤 **Transaction Screenshot Received**
-
-👤 User: @${username}
-🆔 User ID: ${userId}
-💰 Amount: ₹${CONFIG.protectionPrice}
-📋 Type: ${protectionType.toUpperCase()}
-🆔 Transaction: ${transactionId}
-
-📌 Approve or Reject:`,
-                            parse_mode: 'Markdown',
+                            caption: `📤 Transaction Screenshot Received\n\n👤 User: @${username}\n🆔 User ID: ${userId}\n💰 Amount: ₹${CONFIG.protectionPrice}\n📋 Type: ${protectionType.toUpperCase()}\n🆔 Transaction: ${transactionId}\n\n📌 Approve or Reject:`,
                             reply_markup: keyboard
                         }
                     );
@@ -1086,8 +976,7 @@ No payment QR code available. Please contact admin.
             if (payment.status !== 'pending') {
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ Payment already ${payment.status}.`,
-                    { parse_mode: 'Markdown' }
+                    `❌ Payment already ${payment.status}.`
                 );
                 return;
             }
@@ -1099,51 +988,27 @@ No payment QR code available. Please contact admin.
             }
 
             if (approve) {
-                // Approve payment
                 payment.status = 'approved';
                 await payment.save();
 
-                // Update user - now they can protect a target
                 user.protection_status = 'approved';
                 user.protection_type = payment.protection_type;
                 user.transaction_id = transactionId;
                 await user.save();
 
-                // Notify user
                 try {
                     await this.bot.sendMessage(
                         parseInt(payment.user_id),
-                        `✅ **Payment Approved!**
-
-💰 Amount: ₹${payment.amount}
-🆔 Transaction: ${transactionId}
-
-🎯 **Now you can protect your target!**
-
-Send the @username or link you want to protect.
-
-📝 Example: @username or https://t.me/channelname
-
-⚠️ You have one protection available.`,
-                        { parse_mode: 'Markdown' }
+                        `✅ Payment Approved!\n\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n🎯 Now you can protect your target!\n\nSend the @username or link you want to protect.\n\n📝 Example: @username or https://t.me/channelname\n\n⚠️ You have one protection available.`
                     );
                 } catch (e) {}
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Payment Approved!**
-
-👤 User: @${user.username}
-💰 Amount: ₹${payment.amount}
-📋 Type: ${payment.protection_type.toUpperCase()}
-🆔 Transaction: ${transactionId}
-
-User has been notified to send target.`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Payment Approved!\n\n👤 User: @${user.username}\n💰 Amount: ₹${payment.amount}\n📋 Type: ${payment.protection_type.toUpperCase()}\n🆔 Transaction: ${transactionId}\n\nUser has been notified to send target.`
                 );
 
             } else {
-                // Reject payment
                 payment.status = 'rejected';
                 await payment.save();
 
@@ -1155,28 +1020,13 @@ User has been notified to send target.`,
                 try {
                     await this.bot.sendMessage(
                         parseInt(payment.user_id),
-                        `❌ **Payment Rejected!**
-
-💰 Amount: ₹${payment.amount}
-🆔 Transaction: ${transactionId}
-
-❌ Your payment was rejected. Please try again.
-
-📤 Send /start to try again.`,
-                        { parse_mode: 'Markdown' }
+                        `❌ Payment Rejected!\n\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\n❌ Your payment was rejected. Please try again.\n\n📤 Send /start to try again.`
                     );
                 } catch (e) {}
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Payment Rejected!**
-
-👤 User: @${user.username}
-💰 Amount: ₹${payment.amount}
-🆔 Transaction: ${transactionId}
-
-User has been notified.`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Payment Rejected!\n\n👤 User: @${user.username}\n💰 Amount: ₹${payment.amount}\n🆔 Transaction: ${transactionId}\n\nUser has been notified.`
                 );
             }
 
@@ -1192,44 +1042,29 @@ User has been notified.`,
 
     async handleProtectTarget(chatId, userId, username, target) {
         try {
-            // Validate user
             const user = await User.findOne({ telegram_id: userId.toString() });
             if (!user) {
                 await this.bot.sendMessage(chatId, '❌ Please use /start first.');
                 return;
             }
 
-            // Check if user has approved payment
             if (user.protection_status !== 'approved') {
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ **No active protection permission!**
-
-Please complete payment first.
-
-Click 🛡️ Protection to start.`,
-                    { parse_mode: 'Markdown' }
+                    `❌ No active protection permission!\n\nPlease complete payment first.\n\nClick 🛡️ Protection to start.`
                 );
                 return;
             }
 
-            // Check if user already has active protection
             const existing = await Protected.findOne({ protected_by: userId.toString() });
             if (existing) {
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ **You already have active protection!**
-
-📋 Type: ${existing.target_type.toUpperCase()}
-🎯 Target: ${existing.target_name}
-
-You cannot protect another target.`,
-                    { parse_mode: 'Markdown' }
+                    `❌ You already have active protection!\n\n📋 Type: ${existing.target_type.toUpperCase()}\n🎯 Target: ${existing.target_name}\n\nYou cannot protect another target.`
                 );
                 return;
             }
 
-            // Detect target type
             let targetType = user.protection_type || 'account';
             let targetId = target;
 
@@ -1246,7 +1081,6 @@ You cannot protect another target.`,
                 }
             }
 
-            // Check if target already protected by someone else
             const existingProtection = await Protected.findOne({ 
                 target_type: targetType,
                 target_id: targetId
@@ -1254,15 +1088,11 @@ You cannot protect another target.`,
             if (existingProtection) {
                 await this.bot.sendMessage(
                     chatId,
-                    `🛡️ **This ${targetType} is already protected!**
-
-❌ Cannot protect someone else's protected target.`,
-                    { parse_mode: 'Markdown' }
+                    `🛡️ This ${targetType} is already protected!\n\n❌ Cannot protect someone else's protected target.`
                 );
                 return;
             }
 
-            // Create protection
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + CONFIG.protectionExpiryDays);
 
@@ -1276,7 +1106,6 @@ You cannot protect another target.`,
             });
             await protectedItem.save();
 
-            // Update user
             user.protection_status = 'active';
             user.protection_target = targetId;
             user.protection_expiry = expiryDate;
@@ -1284,16 +1113,7 @@ You cannot protect another target.`,
 
             await this.bot.sendMessage(
                 chatId,
-                `✅ **Protection Activated!**
-
-🛡️ Type: ${targetType.toUpperCase()}
-🎯 Target: ${target}
-📅 Expiry: ${moment(expiryDate).format('DD MMM YYYY')}
-
-✅ ${targetType.toUpperCase()} is now protected by RTF!
-
-⚠️ Anyone trying to report it will see: "This ${targetType} is protected by RTF"`,
-                { parse_mode: 'Markdown' }
+                `✅ Protection Activated!\n\n🛡️ Type: ${targetType.toUpperCase()}\n🎯 Target: ${target}\n📅 Expiry: ${moment(expiryDate).format('DD MMM YYYY')}\n\n✅ ${targetType.toUpperCase()} is now protected by RTF!\n\n⚠️ Anyone trying to report it will see: "This ${targetType} is protected by RTF"`
             );
 
             this.conversations.delete(userId);
@@ -1310,7 +1130,6 @@ You cannot protect another target.`,
 
     async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
-            // Check if referrer is subscribed
             const subStatus = await this.checkAllSubscriptions(parseInt(referrerId));
             if (!subStatus.allSubscribed) {
                 addLog(`❌ Referrer ${referrerId} not subscribed, referral denied`, 'WARN');
@@ -1323,7 +1142,6 @@ You cannot protect another target.`,
                 return false;
             }
 
-            // Rate limit check (2 per minute)
             const now = new Date();
             const oneMinuteAgo = new Date(now.getTime() - 60000);
 
@@ -1336,14 +1154,12 @@ You cannot protect another target.`,
                 return false;
             }
 
-            // Add points
             referrer.points += 1;
             referrer.referrals += 1;
             referrer.referral_count_minute += 1;
             referrer.last_referral_time = now;
             await referrer.save();
 
-            // Update analytics
             await Analytics.updateOne(
                 { date: { $gte: new Date().setHours(0,0,0,0) } },
                 { $inc: { total_referrals: 1 } },
@@ -1352,43 +1168,25 @@ You cannot protect another target.`,
 
             addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
 
-            // Notify referrer
             const referralLink = await this.getReferralLink(referrer.telegram_id);
             try {
                 const newUser = await User.findOne({ telegram_id: userId });
                 const newName = newUserUsername || `@${newUser?.username || 'user'}`;
                 await this.bot.sendMessage(
                     parseInt(referrerId),
-                    `🎉 **New Referral!**
-
-👤 ${newName} joined using your referral link!
-⭐ You earned 1 point!
-📊 Total Points: ${referrer.points}
-
-🔗 Keep sharing: ${referralLink}`,
-                    { parse_mode: 'Markdown' }
+                    `🎉 New Referral!\n\n👤 ${newName} joined using your referral link!\n⭐ You earned 1 point!\n📊 Total Points: ${referrer.points}\n\n🔗 Keep sharing: ${referralLink}`
                 );
             } catch (e) {
                 addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
             }
 
-            // Notify admins about referral
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const newUser = await User.findOne({ telegram_id: userId });
                     const newName = newUserUsername || `@${newUser?.username || 'user'}`;
                     await this.bot.sendMessage(
                         adminId,
-                        `👥 **New Referral!**
-
-👤 Referrer: @${referrer.username}
-👤 New User: ${newName}
-🆔 Referrer ID: ${referrerId}
-🆔 New User ID: ${userId}
-⭐ Points Earned: 1
-
-📊 Referrer Total Points: ${referrer.points}`,
-                        { parse_mode: 'Markdown' }
+                        `👥 New Referral!\n\n👤 Referrer: @${referrer.username}\n👤 New User: ${newName}\n🆔 Referrer ID: ${referrerId}\n🆔 New User ID: ${userId}\n⭐ Points Earned: 1\n\n📊 Referrer Total Points: ${referrer.points}`
                     );
                 } catch (e) {
                     addLog(`❌ Failed to notify admin about referral: ${e.message}`, 'ERROR');
@@ -1409,7 +1207,7 @@ You cannot protect another target.`,
 
     setupCommands() {
         // ============================================
-        // START COMMAND - MODIFIED
+        // START COMMAND - FIXED ✅
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1443,17 +1241,11 @@ You cannot protect another target.`,
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
-                // ============================================
-                // CHECK SUBSCRIPTIONS
-                // ============================================
-
                 const subStatus = await this.checkAllSubscriptions(userId);
                 
-                // Agar mandatory channels me se koi missing hai
                 if (!subStatus.allSubscribed) {
                     addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
                     
-                    // Show missing channels with welcome channel (if not shown before)
                     if (!user.welcome_channel_shown) {
                         await this.showWelcomeWithChannels(chatId, userId, subStatus.missingChannels);
                         user.welcome_channel_shown = true;
@@ -1464,20 +1256,12 @@ You cannot protect another target.`,
                     
                     return;
                 }
-
-                // ============================================
-                // SHOW WELCOME CHANNEL WITH MANDATORY CHANNELS (1 TIME - NO CHECK)
-                // ============================================
                 
                 if (!user.welcome_channel_shown) {
                     await this.showWelcomeWithChannels(chatId, userId, []);
                     user.welcome_channel_shown = true;
                     await user.save();
                 }
-
-                // ============================================
-                // PROCESS REFERRAL
-                // ============================================
 
                 if (isNewUser && referralCode) {
                     let referrerId = null;
@@ -1512,10 +1296,6 @@ You cannot protect another target.`,
                     }
                 }
 
-                // ============================================
-                // UPDATE USER VERIFICATION
-                // ============================================
-
                 if (!user.is_verified) {
                     user.is_verified = true;
                     await user.save();
@@ -1533,48 +1313,48 @@ You cannot protect another target.`,
                 if (user.protection_status === 'active') {
                     const protectedItem = await Protected.findOne({ protected_by: userId.toString() });
                     if (protectedItem) {
-                        protectionMsg = `\n🛡️ **Protection:** ✅ Active (${protectedItem.target_type.toUpperCase()})`;
+                        protectionMsg = `\n🛡️ Protection: ✅ Active (${protectedItem.target_type.toUpperCase()})`;
                     }
                 } else if (user.protection_status === 'approved') {
-                    protectionMsg = `\n🛡️ **Protection:** ✅ Payment Approved - Send target to protect!`;
+                    protectionMsg = `\n🛡️ Protection: ✅ Payment Approved - Send target to protect!`;
                 } else if (user.protection_status === 'pending_approval') {
-                    protectionMsg = `\n⏳ **Protection:** Pending Admin Approval`;
+                    protectionMsg = `\n🛡️ Protection: ⏳ Pending Admin Approval`;
                 } else if (user.protection_status === 'pending_payment') {
-                    protectionMsg = `\n⏳ **Protection:** Payment Pending - Send screenshot`;
+                    protectionMsg = `\n🛡️ Protection: ⏳ Payment Pending - Send screenshot`;
                 }
 
                 const referralLink = await this.getReferralLink(userId);
 
-                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v2.0**
+                // ✅ FIXED: NO Markdown - Plain text only
+                const welcomeMessage = `🔥 ULTIMATE BAN BOT v2.0
 
-🌟 **Your Stats:**
+🌟 Your Stats:
 • Points: ${points} ⭐
 • Referrals: ${user.referrals || 0}
 • Reports Available: ${Math.max(0, remaining)}
 • Reports Used: ${reportsUsed}${protectionMsg}
 
-⚡ **Features:**
+⚡ Features:
 • 99.99% Success Rate
 • ${CONFIG.reportsPerTarget} Reports per Target
 • 3 Report Types: Account, Channel, Group
 • 🛡️ Protection System
 
-🔗 **Referral System:**
+🔗 Referral System:
 • ${CONFIG.refersForReport} points = 1 report
 • Share: ${referralLink}
 
-💡 **Select a report type below to start!**
+💡 Select a report type below to start!
 
 /help for more info`;
 
-                await this.bot.sendMessage(chatId, welcomeMessage, {
-                    parse_mode: 'Markdown',
-                    ...this.getMainMenu()
-                });
+                await this.bot.sendMessage(chatId, welcomeMessage, this.getMainMenu());
 
             } catch (error) {
                 addLog(`❌ Start error: ${error.message}`, 'ERROR');
-                await this.bot.sendMessage(chatId, '❌ Error starting bot.');
+                try {
+                    await this.bot.sendMessage(chatId, '❌ Error starting bot. Please try again.');
+                } catch (e) {}
             }
         });
 
@@ -1603,13 +1383,9 @@ You cannot protect another target.`,
 
                         await this.bot.sendMessage(
                             chatId,
-                            `✅ **VERIFICATION SUCCESSFUL!**
-
-Now you can use the bot! Send /start to continue.`,
-                            { parse_mode: 'Markdown' }
+                            `✅ VERIFICATION SUCCESSFUL!\n\nNow you can use the bot! Send /start to continue.`
                         );
                     } else {
-                        // Show only missing channels
                         await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
                     }
                     await this.bot.answerCallbackQuery(query.id);
@@ -1633,7 +1409,6 @@ Now you can use the bot! Send /start to continue.`,
                     return;
                 }
 
-                // Admin approve/reject
                 if (data.startsWith('approve_')) {
                     const transactionId = data.replace('approve_', '');
                     await this.handlePaymentApproval(chatId, userId, transactionId, true);
@@ -1761,7 +1536,8 @@ Now you can use the bot! Send /start to continue.`,
                     protectionInfo = '⏳ Payment Pending';
                 }
 
-                const statsMessage = `📊 **Your Stats**
+                // ✅ FIXED: NO Markdown
+                const statsMessage = `📊 Your Stats
 
 👤 User: @${user.username || 'unknown'}
 ⭐ Points: ${points}
@@ -1770,7 +1546,7 @@ Now you can use the bot! Send /start to continue.`,
 📤 Reports Used: ${reportsUsed}
 📈 Success Rate: ${reportsUsed > 0 ? Math.round((user.reports_success / reportsUsed) * 100) : 0}%
 
-🛡️ **Protection:** ${protectionInfo}
+🛡️ Protection: ${protectionInfo}
 
 📅 Joined: ${moment(user.created_at).format('DD MMM YYYY')}
 🔄 Last Active: ${moment(user.last_active).fromNow()}
@@ -1778,9 +1554,9 @@ Now you can use the bot! Send /start to continue.`,
 🔗 Referral Link:
 ${referralLink}
 
-💡 **Higher Evidence = Higher Ban Chance!**`;
+💡 Higher Evidence = Higher Ban Chance!`;
 
-                await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+                await this.bot.sendMessage(chatId, statsMessage);
 
             } catch (error) {
                 addLog(`❌ Stats error: ${error.message}`, 'ERROR');
@@ -1813,7 +1589,8 @@ ${referralLink}
                 const nextReport = CONFIG.refersForReport - (points % CONFIG.refersForReport);
                 const referralLink = await this.getReferralLink(userId);
 
-                const referMessage = `🔗 **Refer & Earn Points!**
+                // ✅ FIXED: NO Markdown
+                const referMessage = `🔗 Refer & Earn Points!
 
 📊 Your Stats:
 • Points: ${points} ⭐
@@ -1828,7 +1605,7 @@ ${referralLink}
 🔗 Your Referral Link:
 ${referralLink}`;
 
-                await this.bot.sendMessage(chatId, referMessage, { parse_mode: 'Markdown' });
+                await this.bot.sendMessage(chatId, referMessage);
 
             } catch (error) {
                 addLog(`❌ Refer error: ${error.message}`, 'ERROR');
@@ -1842,16 +1619,18 @@ ${referralLink}`;
 
         this.bot.onText(/ℹ️ Help/, async (msg) => {
             const chatId = msg.chat.id;
-            const helpMessage = `ℹ️ **Help & Guide**
+            
+            // ✅ FIXED: NO Markdown
+            const helpMessage = `ℹ️ Help & Guide
 
-🔥 **How to Ban:**
+🔥 How to Ban:
 1. Click "🎯 Report Account", "📢 Report Channel", or "👥 Report Group"
 2. Enter @username or link
 3. Upload evidence (screenshots, links, descriptions)
 4. Bot sends ${CONFIG.reportsPerTarget} reports
 5. 99.99% ban chance!
 
-🛡️ **Protection System:**
+🛡️ Protection System:
 1. Click "🛡️ Protection"
 2. Select what to protect (Account/Channel/Group)
 3. Pay ₹${CONFIG.protectionPrice} via QR
@@ -1860,40 +1639,39 @@ ${referralLink}`;
 6. Send the target you want to protect
 7. Target is protected for ${CONFIG.protectionExpiryDays} days!
 
-💰 **Price:** ₹${CONFIG.protectionPrice}
+💰 Price: ₹${CONFIG.protectionPrice}
 
-📊 **Points System:**
+📊 Points System:
 • ${CONFIG.refersForReport} points = 1 report
 • Refer others to earn points
 
-📤 **Evidence Guide (Important!):**
+📤 Evidence Guide (Important!):
 
-📸 **Screenshots:** Chat logs, violations, profiles
-🔗 **Links:** Harmful content, scam websites
-📝 **Description:** What happened, when, where
-🎥 **Videos:** Screen recordings of violations
+📸 Screenshots: Chat logs, violations, profiles
+🔗 Links: Harmful content, scam websites
+📝 Description: What happened, when, where
+🎥 Videos: Screen recordings of violations
 
-💡 **HIGHER EVIDENCE = HIGHER BAN CHANCE!**
+💡 HIGHER EVIDENCE = HIGHER BAN CHANCE!
 
-| Evidence Type | Ban Chance |
-|---------------|------------|
-| Screenshots + Description + Links | 95% |
-| Screenshots + Description | 85% |
-| Screenshots Only | 70% |
-| Description Only | 40% |
-| No Evidence (Skip) | 5% |
+Evidence Type | Ban Chance
+Screenshots + Description + Links | 95%
+Screenshots + Description | 85%
+Screenshots Only | 70%
+Description Only | 40%
+No Evidence (Skip) | 5%
 
-⚠️ **Success Factors:**
+⚠️ Success Factors:
 • Real violation
 • Strong evidence
 • ${CONFIG.reportsPerTarget} reports
 • 99.99% success!
 
-🛡️ **Protected targets cannot be reported!**
+🛡️ Protected targets cannot be reported!
 
-💡 **/start** to begin!`;
+💡 /start to begin!`;
 
-            await this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+            await this.bot.sendMessage(chatId, helpMessage);
         });
 
         // ============================================
@@ -1913,16 +1691,17 @@ ${referralLink}`;
             const protectedCount = await Protected.countDocuments();
             const pendingPayments = await Payment.countDocuments({ status: 'pending' });
 
-            const adminMessage = `👑 **Admin Panel**
+            // ✅ FIXED: NO Markdown
+            const adminMessage = `👑 Admin Panel
 
-📊 **Stats:**
+📊 Stats:
 • Users: ${stats.totalUsers}
 • Reports: ${stats.totalReports}
 • Queue: ${this.queue.length}
 • Protected: ${protectedCount}
 • Pending Payments: ${pendingPayments}
 
-🔧 **Commands:**
+🔧 Commands:
 • /addpoints @username 5 - Add points
 • /setpoints @username 10 - Set points
 • /protect @username - Protect target (free)
@@ -1936,13 +1715,13 @@ ${referralLink}`;
 • /removeqr - Remove QR code
 • /payments - View pending payments
 
-📢 **Channel Management:**
+📢 Channel Management:
 • /addchannel id link name - Add mandatory channel
 • /removechannel id - Remove mandatory channel
 • /setwelcome id link name - Set welcome channel
 • /listchannels - List all channels`;
 
-            await this.bot.sendMessage(chatId, adminMessage, { parse_mode: 'Markdown' });
+            await this.bot.sendMessage(chatId, adminMessage);
         });
 
         // ============================================
@@ -1974,14 +1753,7 @@ ${referralLink}`;
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Channel Added Successfully!**
-
-📢 Name: ${channelName}
-🆔 ID: ${channelId}
-🔗 Link: ${channelLink}
-
-📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Channel Added Successfully!\n\n📢 Name: ${channelName}\n🆔 ID: ${channelId}\n🔗 Link: ${channelLink}\n\n📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`
                 );
 
             } catch (error) {
@@ -2019,13 +1791,7 @@ ${referralLink}`;
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Channel Removed Successfully!**
-
-📢 Name: ${removed.name}
-🆔 ID: ${removed.id}
-
-📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Channel Removed Successfully!\n\n📢 Name: ${removed.name}\n🆔 ID: ${removed.id}\n\n📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`
                 );
 
             } catch (error) {
@@ -2064,14 +1830,7 @@ ${referralLink}`;
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Welcome Channel Set Successfully!**
-
-🎁 Name: ${channelName}
-🆔 ID: ${channelId}
-🔗 Link: ${channelLink}
-
-💡 This channel will show to users only once on first start.`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Welcome Channel Set Successfully!\n\n🎁 Name: ${channelName}\n🆔 ID: ${channelId}\n🔗 Link: ${channelLink}\n\n💡 This channel will show to users only once on first start.`
                 );
 
             } catch (error) {
@@ -2093,8 +1852,8 @@ ${referralLink}`;
                 return;
             }
 
-            let message = `📢 **Channel List**\n\n`;
-            message += `**Mandatory Channels (${CONFIG.channels.mandatory.length}):**\n`;
+            let message = `📢 Channel List\n\n`;
+            message += `Mandatory Channels (${CONFIG.channels.mandatory.length}):\n`;
             
             for (const channel of CONFIG.channels.mandatory) {
                 message += `• ${channel.name}\n`;
@@ -2103,18 +1862,18 @@ ${referralLink}`;
             }
 
             if (CONFIG.channels.welcome) {
-                message += `**Welcome Channel (1 time show):**\n`;
+                message += `Welcome Channel (1 time show):\n`;
                 message += `• ${CONFIG.channels.welcome.name}\n`;
                 message += `  🆔 ${CONFIG.channels.welcome.id}\n`;
                 message += `  🔗 ${CONFIG.channels.welcome.link}\n`;
                 message += `  💡 Shows once on first start\n\n`;
             } else {
-                message += `**Welcome Channel:** Not set\n\n`;
+                message += `Welcome Channel: Not set\n\n`;
             }
 
             message += `💡 Use /addchannel, /removechannel, /setwelcome to manage channels.`;
 
-            await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+            await this.bot.sendMessage(chatId, message);
         });
 
         // ============================================
@@ -2152,12 +1911,7 @@ ${referralLink}`;
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Points Added!**
-
-👤 User: @${user.username}
-⭐ Points Added: ${points}
-📊 Total Points: ${user.points}`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Points Added!\n\n👤 User: @${user.username}\n⭐ Points Added: ${points}\n📊 Total Points: ${user.points}`
                 );
 
             } catch (error) {
@@ -2201,11 +1955,7 @@ ${referralLink}`;
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Points Set!**
-
-👤 User: @${user.username}
-⭐ Points Set: ${points}`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Points Set!\n\n👤 User: @${user.username}\n⭐ Points Set: ${points}`
                 );
 
             } catch (error) {
@@ -2256,11 +2006,7 @@ ${referralLink}`;
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Protected Successfully!**
-
-🛡️ Target: ${target}
-📋 Type: ${targetType}`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Protected Successfully!\n\n🛡️ Target: ${target}\n📋 Type: ${targetType}`
                 );
             } catch (error) {
                 addLog(`❌ Protect error: ${error.message}`, 'ERROR');
@@ -2295,10 +2041,7 @@ ${referralLink}`;
                 addLog(`🛡️ Admin unprotected ${target}`, 'INFO');
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **Unprotected Successfully!**
-
-🛡️ Target: ${target}`,
-                    { parse_mode: 'Markdown' }
+                    `✅ Unprotected Successfully!\n\n🛡️ Target: ${target}`
                 );
             } catch (error) {
                 addLog(`❌ Unprotect error: ${error.message}`, 'ERROR');
@@ -2329,11 +2072,7 @@ ${referralLink}`;
                     addLog(`🚫 Admin banned user @${target}`, 'INFO');
                     await this.bot.sendMessage(
                         chatId,
-                        `✅ **User Banned Successfully!**
-
-👤 User: ${target}
-🚫 Status: Banned`,
-                        { parse_mode: 'Markdown' }
+                        `✅ User Banned Successfully!\n\n👤 User: ${target}\n🚫 Status: Banned`
                     );
                 } else {
                     await this.bot.sendMessage(chatId, '❌ User not found.');
@@ -2367,11 +2106,7 @@ ${referralLink}`;
                     addLog(`✅ Admin unbanned user @${target}`, 'INFO');
                     await this.bot.sendMessage(
                         chatId,
-                        `✅ **User Unbanned Successfully!**
-
-👤 User: ${target}
-✅ Status: Active`,
-                        { parse_mode: 'Markdown' }
+                        `✅ User Unbanned Successfully!\n\n👤 User: ${target}\n✅ Status: Active`
                     );
                 } else {
                     await this.bot.sendMessage(chatId, '❌ User not found.');
@@ -2399,11 +2134,7 @@ ${referralLink}`;
             addLog(`📢 Admin ${userId} started broadcast`, 'INFO');
             await this.bot.sendMessage(
                 chatId,
-                `📢 **Broadcast Message**
-
-Send your broadcast message.
-
-Type /cancel to cancel.`
+                `📢 Broadcast Message\n\nSend your broadcast message.\n\nType /cancel to cancel.`
             );
         });
 
@@ -2422,22 +2153,21 @@ Type /cancel to cancel.`
 
             const stats = await this.getAdminStats();
             
-            let statsMessage = `📊 **Detailed Stats**
+            let statsMessage = `📊 Detailed Stats
 
-📈 **Users:**
+📈 Users:
 • Total: ${stats.totalUsers}
 • Active (7d): ${stats.activeUsers || 0}
 
-📨 **Reports:**
+📨 Reports:
 • Total: ${stats.totalReports}
 • Success Rate: 99.99%
 
-📢 **Channels:**
+📢 Channels:
 • Mandatory: ${CONFIG.channels.mandatory.length}
 • Welcome: ${CONFIG.channels.welcome ? '✅ Set' : '❌ Not set'}
 
-📊 **Recent Analytics:**
-`;
+📊 Recent Analytics:\n`;
             
             const analytics = await Analytics.find().sort({ date: -1 }).limit(5);
             if (analytics.length === 0) {
@@ -2448,7 +2178,7 @@ Type /cancel to cancel.`
                 }
             }
 
-            await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+            await this.bot.sendMessage(chatId, statsMessage);
         });
 
         // ============================================
@@ -2465,7 +2195,7 @@ Type /cancel to cancel.`
             }
 
             const logs = getLogs(20);
-            let logMessage = '📋 **Recent Logs**\n\n';
+            let logMessage = '📋 Recent Logs\n\n';
             
             if (logs.length === 0) {
                 logMessage += 'No logs found.';
@@ -2480,7 +2210,7 @@ Type /cancel to cancel.`
                 logMessage = logMessage.substring(0, 3900) + '\n... (truncated)';
             }
 
-            await this.bot.sendMessage(chatId, logMessage, { parse_mode: 'Markdown' });
+            await this.bot.sendMessage(chatId, logMessage);
         });
 
         // ============================================
@@ -2499,12 +2229,7 @@ Type /cancel to cancel.`
             this.conversations.set(userId, { step: 'addqr_photo' });
             await this.bot.sendMessage(
                 chatId,
-                `📤 **Add QR Code**
-
-Please send the QR code image as a **photo**.
-
-Type /cancel to cancel.`,
-                { parse_mode: 'Markdown' }
+                `📤 Add QR Code\n\nPlease send the QR code image as a photo.\n\nType /cancel to cancel.`
             );
         });
 
@@ -2527,10 +2252,7 @@ Type /cancel to cancel.`,
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ **QR Code Removed!**
-
-No QR code will be shown to users until a new one is added.`,
-                    { parse_mode: 'Markdown' }
+                    `✅ QR Code Removed!\n\nNo QR code will be shown to users until a new one is added.`
                 );
             } catch (error) {
                 addLog(`❌ Remove QR error: ${error.message}`, 'ERROR');
@@ -2557,15 +2279,12 @@ No QR code will be shown to users until a new one is added.`,
                 if (payments.length === 0) {
                     await this.bot.sendMessage(
                         chatId,
-                        `📋 **No Pending Payments**
-
-All payments are processed.`,
-                        { parse_mode: 'Markdown' }
+                        `📋 No Pending Payments\n\nAll payments are processed.`
                     );
                     return;
                 }
 
-                let paymentMessage = `📋 **Pending Payments (${payments.length})**\n\n`;
+                let paymentMessage = `📋 Pending Payments (${payments.length})\n\n`;
                 for (const p of payments) {
                     paymentMessage += `🆔 ${p.transaction_id}\n`;
                     paymentMessage += `👤 @${p.username || 'unknown'}\n`;
@@ -2575,7 +2294,7 @@ All payments are processed.`,
                     paymentMessage += `---\n`;
                 }
 
-                await this.bot.sendMessage(chatId, paymentMessage, { parse_mode: 'Markdown' });
+                await this.bot.sendMessage(chatId, paymentMessage);
 
             } catch (error) {
                 addLog(`❌ Payments error: ${error.message}`, 'ERROR');
@@ -2659,19 +2378,13 @@ All payments are processed.`,
 
                     const targetType = conversation.targetType || 'account';
                     
-                    // Check if protected
                     const protectedItem = await this.checkProtected(target, targetType);
                     if (protectedItem) {
                         const protectedBy = await User.findOne({ telegram_id: protectedItem.protected_by });
                         addLog(`🛡️ Target ${target} is protected by @${protectedBy?.username || 'unknown'}`, 'INFO');
                         await this.bot.sendMessage(
                             chatId,
-                            `🛡️ **This ${targetType} is PROTECTED!**
-
-⚠️ ${target} is protected by RTF Ban Bot.
-
-❌ Cannot send reports to protected ${targetType}.`,
-                            { parse_mode: 'Markdown' }
+                            `🛡️ This ${targetType} is PROTECTED!\n\n⚠️ ${target} is protected by RTF Ban Bot.\n\n❌ Cannot send reports to protected ${targetType}.`
                         );
                         this.conversations.delete(userId);
                         await this.bot.sendMessage(chatId, '❌ Action cancelled.', this.getMainMenu());
@@ -2688,34 +2401,30 @@ All payments are processed.`,
                         group: 'Group'
                     };
 
-                    const evidenceGuide = `📤 **Upload Evidence** or type "skip".
+                    // ✅ FIXED: NO Markdown
+                    const evidenceGuide = `📤 Upload Evidence or type "skip".
 
-📸 **Best Evidence:**
+📸 Best Evidence:
 1. Screenshots (JPG, PNG, GIF)
 2. Videos (MP4)
 3. Documents (PDF, TXT)
 4. Links to violations
 5. Description of violation
 
-💡 **HIGHER EVIDENCE = HIGHER BAN CHANCE!**
+💡 HIGHER EVIDENCE = HIGHER BAN CHANCE!
 
-| Evidence Type | Ban Chance |
-|---------------|------------|
-| Screenshots + Links | 95% |
-| Screenshots | 70-85% |
-| Description Only | 40% |
-| Skip Evidence | 5% |
+Evidence Type | Ban Chance
+Screenshots + Links | 95%
+Screenshots | 70-85%
+Description Only | 40%
+Skip Evidence | 5%
 
-✅ **Recommended:** Upload screenshots + description for 95% ban chance!`;
+✅ Recommended: Upload screenshots + description for 95% ban chance!`;
 
                     await this.bot.sendMessage(
                         chatId,
-                        `✅ Target: ${target}
-📋 Type: ${typeNames[targetType]}
-
-${evidenceGuide}`,
+                        `✅ Target: ${target}\n📋 Type: ${typeNames[targetType]}\n\n${evidenceGuide}`,
                         {
-                            parse_mode: 'Markdown',
                             reply_markup: {
                                 keyboard: [
                                     ['skip', '❌ Cancel']
@@ -2778,16 +2487,12 @@ ${evidenceGuide}`,
                     const targetType = conversation.targetType || 'account';
                     const target = conversation.target;
 
-                    // Double-check protected
                     const protectedItem = await this.checkProtected(target, targetType);
                     if (protectedItem) {
                         addLog(`🛡️ Target ${target} is protected`, 'WARN');
                         await this.bot.sendMessage(
                             chatId,
-                            `🛡️ **Target is PROTECTED!**
-
-❌ Cannot send reports to protected target.`,
-                            { parse_mode: 'Markdown' }
+                            `🛡️ Target is PROTECTED!\n\n❌ Cannot send reports to protected target.`
                         );
                         this.conversations.delete(userId);
                         await this.bot.sendMessage(chatId, '❌ Action cancelled.', this.getMainMenu());
@@ -2825,18 +2530,10 @@ ${evidenceGuide}`,
                     const evidenceStatus = evidenceText ? '✅ Provided' : '❌ Skipped';
                     const banChance = evidenceText ? '95%' : '5%';
 
+                    // ✅ FIXED: NO Markdown
                     await this.bot.sendMessage(
                         chatId,
-                        `⚙️ **Processing Ban for ${target}**
-
-📊 ${CONFIG.reportsPerTarget} reports being sent
-🎯 Target: ${target}
-📋 Type: ${targetType.toUpperCase()}
-📤 Evidence: ${evidenceStatus}
-🎯 Ban Chance: ${banChance}
-
-⏳ Please wait... This takes 2-3 minutes.`,
-                        { parse_mode: 'Markdown' }
+                        `⚙️ Processing Ban for ${target}\n\n📊 ${CONFIG.reportsPerTarget} reports being sent\n🎯 Target: ${target}\n📋 Type: ${targetType.toUpperCase()}\n📤 Evidence: ${evidenceStatus}\n🎯 Ban Chance: ${banChance}\n\n⏳ Please wait... This takes 2-3 minutes.`
                     );
 
                     this.queue.push({
@@ -2871,8 +2568,7 @@ ${evidenceGuide}`,
                     if (!photo) {
                         await this.bot.sendMessage(
                             chatId,
-                            `❌ Please send a **photo** of your transaction screenshot.`,
-                            { parse_mode: 'Markdown' }
+                            `❌ Please send a photo of your transaction screenshot.`
                         );
                         return;
                     }
@@ -2889,8 +2585,7 @@ ${evidenceGuide}`,
                     if (!target || target.length < 3) {
                         await this.bot.sendMessage(
                             chatId,
-                            `❌ Please enter a valid @username or link.`,
-                            { parse_mode: 'Markdown' }
+                            `❌ Please enter a valid @username or link.`
                         );
                         return;
                     }
@@ -2906,8 +2601,7 @@ ${evidenceGuide}`,
                     if (!photo) {
                         await this.bot.sendMessage(
                             chatId,
-                            `❌ Please send a **photo** as QR code.`,
-                            { parse_mode: 'Markdown' }
+                            `❌ Please send a photo as QR code.`
                         );
                         return;
                     }
@@ -2915,7 +2609,6 @@ ${evidenceGuide}`,
                     try {
                         const fileId = photo[photo.length - 1].file_id;
                         
-                        // Save QR code
                         await QRCode.create({
                             file_id: fileId,
                             payment_amount: CONFIG.protectionPrice,
@@ -2923,7 +2616,6 @@ ${evidenceGuide}`,
                             is_active: true
                         });
 
-                        // Deactivate old QR codes
                         await QRCode.updateMany(
                             { _id: { $ne: (await QRCode.findOne({ is_active: true }))?._id } },
                             { is_active: false }
@@ -2933,12 +2625,7 @@ ${evidenceGuide}`,
 
                         await this.bot.sendMessage(
                             chatId,
-                            `✅ **QR Code Added Successfully!**
-
-💰 Amount: ₹${CONFIG.protectionPrice}
-
-This QR code will be shown to users for protection payments.`,
-                            { parse_mode: 'Markdown' }
+                            `✅ QR Code Added Successfully!\n\n💰 Amount: ₹${CONFIG.protectionPrice}\n\nThis QR code will be shown to users for protection payments.`
                         );
 
                         this.conversations.delete(userId);
@@ -2992,13 +2679,13 @@ This QR code will be shown to users for protection payments.`,
                     for (const user of users) {
                         try {
                             if (messageType === 'text') {
-                                await this.bot.sendMessage(user.telegram_id, content, { parse_mode: 'Markdown' });
+                                await this.bot.sendMessage(user.telegram_id, content);
                             } else if (messageType === 'photo') {
-                                await this.bot.sendPhoto(user.telegram_id, mediaUrl, { caption: content, parse_mode: 'Markdown' });
+                                await this.bot.sendPhoto(user.telegram_id, mediaUrl, { caption: content });
                             } else if (messageType === 'video') {
-                                await this.bot.sendVideo(user.telegram_id, mediaUrl, { caption: content, parse_mode: 'Markdown' });
+                                await this.bot.sendVideo(user.telegram_id, mediaUrl, { caption: content });
                             } else if (messageType === 'document') {
-                                await this.bot.sendDocument(user.telegram_id, mediaUrl, { caption: content, parse_mode: 'Markdown' });
+                                await this.bot.sendDocument(user.telegram_id, mediaUrl, { caption: content });
                             }
                             sent++;
                         } catch (e) {
@@ -3118,11 +2805,7 @@ This QR code will be shown to users for protection payments.`,
 
             let progressMsg = await this.bot.sendMessage(
                 chatId,
-                `⚙️ **Processing Ban for @${username}**
-
-📊 0/${totalReports} reports
-⏳ Starting...`,
-                { parse_mode: 'Markdown' }
+                `⚙️ Processing Ban for @${username}\n\n📊 0/${totalReports} reports\n⏳ Starting...`
             );
 
             addLog(`📤 Sending ${totalReports} reports for @${username}`, 'INFO');
@@ -3160,20 +2843,10 @@ This QR code will be shown to users for protection payments.`,
                     
                     try {
                         await this.bot.editMessageText(
-                            `⚙️ **Processing Ban for @${username}**
-
-${bar} ${progress}%
-
-📊 ${i+1}/${totalReports} reports
-✅ Success: ${successCount}
-❌ Failed: ${failedCount}
-🎯 Ban Probability: ${currentBanProb}%
-
-⏳ ${Math.round((totalReports - i - 1) * 1.2)}s remaining`,
+                            `⚙️ Processing Ban for @${username}\n\n${bar} ${progress}%\n\n📊 ${i+1}/${totalReports} reports\n✅ Success: ${successCount}\n❌ Failed: ${failedCount}\n🎯 Ban Probability: ${currentBanProb}%\n\n⏳ ${Math.round((totalReports - i - 1) * 1.2)}s remaining`,
                             {
                                 chat_id: chatId,
-                                message_id: progressMsg.message_id,
-                                parse_mode: 'Markdown'
+                                message_id: progressMsg.message_id
                             }
                         );
                     } catch (e) {
@@ -3202,30 +2875,12 @@ ${bar} ${progress}%
             addLog(`✅ Completed for @${username}: ${successCount}/${totalReports} (${Math.round((successCount/totalReports)*100)}%)`, 'INFO');
 
             const emoji = banProbability >= 90 ? '🔥' : banProbability >= 70 ? '✅' : '⚠️';
-            const finalMessage = `${emoji} **BAN PROCESS COMPLETE!**
-
-📊 **Summary:**
-• Target: @${username}
-• Type: ${targetType.toUpperCase()}
-• Total Reports: ${totalReports}
-• Successful: ${successCount}
-• Failed: ${failedCount}
-• Success Rate: ${Math.round((successCount/totalReports)*100)}%
-• Ban Probability: ${banProbability}%
-
-${banProbability >= 90 ? '🔥 90-99% BAN PROBABILITY! HIGH CHANCE!' : banProbability >= 70 ? '✅ 70-89% BAN PROBABILITY! GOOD CHANCE!' : '⚠️ 30-69% BAN PROBABILITY! NEED MORE EVIDENCE!'}
-
-📎 Reference: ${reportId}
-⏳ Expected Action: 12-72 hours
-
-${evidence ? '📤 Evidence: ✅ Provided (Higher success)' : '📤 Evidence: ❌ Skipped (Lower success)'}
-
-💡 **Next time:** Upload screenshots + links for 95% ban chance!`;
+            // ✅ FIXED: NO Markdown
+            const finalMessage = `${emoji} BAN PROCESS COMPLETE!\n\n📊 Summary:\n• Target: @${username}\n• Type: ${targetType.toUpperCase()}\n• Total Reports: ${totalReports}\n• Successful: ${successCount}\n• Failed: ${failedCount}\n• Success Rate: ${Math.round((successCount/totalReports)*100)}%\n• Ban Probability: ${banProbability}%\n\n${banProbability >= 90 ? '🔥 90-99% BAN PROBABILITY! HIGH CHANCE!' : banProbability >= 70 ? '✅ 70-89% BAN PROBABILITY! GOOD CHANCE!' : '⚠️ 30-69% BAN PROBABILITY! NEED MORE EVIDENCE!'}\n\n📎 Reference: ${reportId}\n⏳ Expected Action: 12-72 hours\n\n${evidence ? '📤 Evidence: ✅ Provided (Higher success)' : '📤 Evidence: ❌ Skipped (Lower success)'}\n\n💡 Next time: Upload screenshots + links for 95% ban chance!`;
 
             await this.bot.editMessageText(finalMessage, {
                 chat_id: chatId,
-                message_id: progressMsg.message_id,
-                parse_mode: 'Markdown'
+                message_id: progressMsg.message_id
             });
 
         } catch (error) {
