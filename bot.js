@@ -1,5 +1,5 @@
 // ============================================
-// ULTIMATE BAN BOT v1.2 - REFERRAL + MENU FIXED
+// ULTIMATE BAN BOT v2.0 - 4 CHANNELS SYSTEM
 // 99.99% SUCCESS RATE
 // ============================================
 
@@ -24,8 +24,6 @@ dotenv.config();
 
 const CONFIG = {
     token: process.env.BOT_TOKEN || '8459236869:AAE-dLDm38DmNv3-OIRTdSt4UktMD5wP-is',
-    channelId: parseInt(process.env.CHANNEL_ID || '-1003004551707'),
-    channelLink: process.env.CHANNEL_LINK || 'https://t.me/RTFGAMINGHACK0',
     adminIds: JSON.parse(process.env.ADMIN_IDS || '[123456789]'),
     mongoUri: process.env.MONGODB_URI || 'mongodb+srv://sahajada07x:Apon07@sahajada.a8r2wdp.mongodb.net/?appName=Sahajada',
     port: parseInt(process.env.PORT || '10000'),
@@ -35,7 +33,42 @@ const CONFIG = {
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
     protectionPrice: parseInt(process.env.PROTECTION_PRICE || '40'),
     referralPerMinute: 2,
-    protectionExpiryDays: 30
+    protectionExpiryDays: 30,
+    
+    // ============================================
+    // CHANNELS CONFIGURATION - ADMIN PANEL SE ADD KAR SAKTE HAIN
+    // ============================================
+    channels: {
+        // 3 Channels with join check (mandatory)
+        mandatory: [
+            {
+                id: '-1003004551707',
+                link: 'https://t.me/RTFGAMINGHACK0',
+                name: 'RTF GAMING HACK',
+                type: 'channel'
+            },
+            {
+                id: '-1002004551708',
+                link: 'https://t.me/RTFGAMINGUPDATES',
+                name: 'RTF Gaming Updates',
+                type: 'channel'
+            },
+            {
+                id: '-1001004551709',
+                link: 'https://t.me/RTFCOMMUNITY',
+                name: 'RTF Community',
+                type: 'group'
+            }
+        ],
+        // 1 Channel - No join check (1 time show)
+        welcome: {
+            id: '-1001504551710',
+            link: 'https://t.me/RTFWELCOME',
+            name: '🎁 RTF Welcome Bonus',
+            type: 'channel',
+            showOnce: true
+        }
+    }
 };
 
 // ============================================
@@ -97,7 +130,7 @@ const rateLimiter = new RateLimiterMemory({
 // ============================================
 
 mongoose.connect(CONFIG.mongoUri, {
-    dbName: 'ultimate_ban',
+    dbName: 'rtf_ban_bot',
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000
 });
@@ -123,6 +156,7 @@ const UserSchema = new mongoose.Schema({
     referrals: { type: Number, default: 0 },
     referral_code: { type: String, unique: true, index: true },
     is_verified: { type: Boolean, default: false },
+    welcome_channel_shown: { type: Boolean, default: false },
     reports_used: { type: Number, default: 0 },
     reports_success: { type: Number, default: 0 },
     reports_failed: { type: Number, default: 0 },
@@ -439,7 +473,7 @@ class AIReportEngine {
 • REPORT TO TELEGRAM TEAM
 
 🔖 REF: ${refId}
-🛡️ ULTIMATE BAN BOT v1.2 - 99.99% SUCCESS
+🛡️ ULTIMATE BAN BOT v2.0 - 99.99% SUCCESS
 
 📅 ${timestamp}`;
     }
@@ -465,15 +499,14 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE BAN BOT v1.2 - REFERRAL + MENU FIXED', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v2.0 - 4 CHANNELS SYSTEM', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
-        addLog(`📢 Channel: ${CONFIG.channelLink}`, 'INFO');
+        addLog(`📢 Mandatory Channels: ${CONFIG.channels.mandatory.length}`, 'INFO');
+        addLog(`🎁 Welcome Channel: ${CONFIG.channels.welcome.name}`, 'INFO');
         addLog(`⚙️ Workers: ${CONFIG.maxWorkers}`, 'INFO');
         addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
         addLog(`🛡️ Protection Price: ₹${CONFIG.protectionPrice}`, 'INFO');
-        addLog(`📅 Protection Expiry: ${CONFIG.protectionExpiryDays} days`, 'INFO');
-        addLog(`🌐 Proxy: DISABLED (Direct Connection)`, 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog('✅ Bot is LIVE!', 'INFO');
         addLog('='.repeat(70), 'INFO');
@@ -485,12 +518,56 @@ class UltimateBot {
     }
 
     // ============================================
-    // CHECK SUBSCRIPTION
+    // CHECK ALL SUBSCRIPTIONS - MODIFIED
     // ============================================
 
-    async checkSubscription(userId) {
+    async checkAllSubscriptions(userId) {
+        const results = {
+            allSubscribed: true,
+            mandatory: [],
+            welcome: null,
+            missingChannels: []
+        };
+        
+        // Check mandatory channels (3 channels)
+        for (const channel of CONFIG.channels.mandatory) {
+            try {
+                const chatMember = await this.bot.getChatMember(parseInt(channel.id), userId);
+                const isMember = chatMember.status === 'member' || 
+                               chatMember.status === 'administrator' || 
+                               chatMember.status === 'creator';
+                
+                results.mandatory.push({
+                    ...channel,
+                    isMember: isMember
+                });
+                
+                if (!isMember) {
+                    results.allSubscribed = false;
+                    results.missingChannels.push(channel);
+                }
+            } catch (error) {
+                results.allSubscribed = false;
+                results.missingChannels.push(channel);
+            }
+        }
+        
+        // Check welcome channel (NO join check - sirf show karna hai)
+        const user = await User.findOne({ telegram_id: userId.toString() });
+        if (user && !user.welcome_channel_shown) {
+            results.welcome = CONFIG.channels.welcome;
+        }
+        
+        return results;
+    }
+
+    // ============================================
+    // CHECK SINGLE CHANNEL (For mandatory)
+    // ============================================
+
+    async checkSingleChannel(userId, channelId) {
         try {
-            const chatMember = await this.bot.getChatMember(CONFIG.channelId, userId);
+            const chatMember = await this.bot.getChatMember(parseInt(channelId), userId);
             return chatMember.status === 'member' || 
                    chatMember.status === 'administrator' || 
                    chatMember.status === 'creator';
@@ -500,30 +577,47 @@ class UltimateBot {
     }
 
     // ============================================
-    // CHECK PROTECTED
+    // SHOW WELCOME CHANNEL (1 TIME - NO CHECK)
     // ============================================
 
-    async checkProtected(target, targetType) {
-        try {
-            const protectedItem = await Protected.findOne({
-                target_type: targetType,
-                target_id: target
-            });
-            if (protectedItem) {
-                if (protectedItem.expiry_date && new Date() > protectedItem.expiry_date) {
-                    await Protected.findOneAndDelete({ _id: protectedItem._id });
-                    return null;
-                }
-                return protectedItem;
+    async showWelcomeChannel(chatId, userId) {
+        const welcome = CONFIG.channels.welcome;
+        
+        if (!welcome) return;
+        
+        const message = `🎁 **SPECIAL WELCOME CHANNEL!**
+
+📢 **${welcome.name}**
+
+🔗 **Link:** ${welcome.link}
+
+💡 **No need to join!** Just click and check it out!
+
+✨ This is a one-time welcome message. You won't see it again!
+
+👀 Check out our exclusive content!`;
+
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🎁 Visit Welcome Channel', url: welcome.link }],
+                [{ text: '✅ Done', callback_data: 'welcome_done' }]
+            ]
+        };
+        
+        await this.bot.sendMessage(
+            chatId,
+            message,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: keyboard
             }
-            return null;
-        } catch (error) {
-            return null;
-        }
+        );
+        
+        addLog(`🎁 Welcome channel shown to user ${userId}`, 'INFO');
     }
 
     // ============================================
-    // GET MAIN MENU (without Menu button)
+    // GET MAIN MENU (Without Channel Button)
     // ============================================
 
     getMainMenu() {
@@ -554,12 +648,11 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET REFERRAL LINK - FIXED (Only User ID)
+    // GET REFERRAL LINK (Only User ID)
     // ============================================
 
     async getReferralLink(userId) {
         const botUsername = await getBotUsername(this.bot);
-        // Only user ID, no extra text
         return `https://t.me/${botUsername}?start=${userId}`;
     }
 
@@ -569,13 +662,13 @@ class UltimateBot {
 
     async startReportProcess(chatId, userId, username, targetType) {
         try {
-            const isSubscribed = await this.checkSubscription(userId);
-            if (!isSubscribed) {
+            const isSubscribed = await this.checkAllSubscriptions(userId);
+            if (!isSubscribed.allSubscribed) {
                 await this.bot.sendMessage(
                     chatId,
                     `❌ **CHANNEL VERIFICATION REQUIRED**
 
-Please join: ${CONFIG.channelLink}`,
+Please join all mandatory channels first.`,
                     { parse_mode: 'Markdown' }
                 );
                 return;
@@ -659,13 +752,13 @@ Send the ${typeNames[targetType].toLowerCase()} username or link.
 
     async startProtectionProcess(chatId, userId, username) {
         try {
-            const isSubscribed = await this.checkSubscription(userId);
-            if (!isSubscribed) {
+            const isSubscribed = await this.checkAllSubscriptions(userId);
+            if (!isSubscribed.allSubscribed) {
                 await this.bot.sendMessage(
                     chatId,
                     `❌ **CHANNEL VERIFICATION REQUIRED**
 
-Please join: ${CONFIG.channelLink}`,
+Please join all mandatory channels first.`,
                     { parse_mode: 'Markdown' }
                 );
                 return;
@@ -1166,14 +1259,14 @@ You cannot protect another target.`,
     }
 
     // ============================================
-    // HANDLE REFERRAL - FIXED (User ID only)
+    // HANDLE REFERRAL
     // ============================================
 
     async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
             // Check if referrer is subscribed
-            const isSubscribed = await this.checkSubscription(parseInt(referrerId));
-            if (!isSubscribed) {
+            const isSubscribed = await this.checkAllSubscriptions(parseInt(referrerId));
+            if (!isSubscribed.allSubscribed) {
                 addLog(`❌ Referrer ${referrerId} not subscribed, referral denied`, 'WARN');
                 return false;
             }
@@ -1213,7 +1306,7 @@ You cannot protect another target.`,
 
             addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
 
-            // Notify referrer - Using new referral link format (only user ID)
+            // Notify referrer
             const referralLink = await this.getReferralLink(referrer.telegram_id);
             try {
                 const newUser = await User.findOne({ telegram_id: userId });
@@ -1270,7 +1363,7 @@ You cannot protect another target.`,
 
     setupCommands() {
         // ============================================
-        // START COMMAND - FIXED REFERRAL (User ID only)
+        // START COMMAND - MODIFIED
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1290,7 +1383,6 @@ You cannot protect another target.`,
 
                 if (!user) {
                     isNewUser = true;
-                    // Generate referral code for the user
                     const referralCodeGen = `REF_${userId}_${Date.now().toString(36)}`;
                     user = new User({
                         telegram_id: userId.toString(),
@@ -1298,61 +1390,80 @@ You cannot protect another target.`,
                         first_name: firstName || '',
                         referral_code: referralCodeGen,
                         is_verified: false,
-                        protection_status: 'none'
+                        protection_status: 'none',
+                        welcome_channel_shown: false
                     });
                     await user.save();
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
                 // ============================================
-                // CHECK SUBSCRIPTION - FIRST
+                // CHECK SUBSCRIPTIONS
                 // ============================================
 
-                const isSubscribed = await this.checkSubscription(userId);
-
-                if (!isSubscribed) {
-                    addLog(`🔐 User @${username} not subscribed`, 'INFO');
+                const subStatus = await this.checkAllSubscriptions(userId);
+                
+                // Agar mandatory channels me se koi missing hai
+                if (!subStatus.allSubscribed) {
+                    addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
+                    
+                    let message = `🔐 **CHANNEL VERIFICATION REQUIRED**\n\n`;
+                    message += `Please join all these channels to use the bot:\n\n`;
+                    
                     const keyboard = {
-                        inline_keyboard: [
-                            [{ text: '📢 Join Channel', url: CONFIG.channelLink }],
-                            [{ text: '✅ I\'ve Joined', callback_data: 'verify_channel' }]
-                        ]
+                        inline_keyboard: []
                     };
+                    
+                    // Add all mandatory channels
+                    for (const channel of subStatus.missingChannels) {
+                        message += `📢 ${channel.name}\n`;
+                        message += `🔗 ${channel.link}\n\n`;
+                        keyboard.inline_keyboard.push([
+                            { text: `📢 Join ${channel.name}`, url: channel.link }
+                        ]);
+                    }
+                    
+                    keyboard.inline_keyboard.push([
+                        { text: '✅ I\'ve Joined All', callback_data: 'verify_all_channels' }
+                    ]);
                     
                     await this.bot.sendMessage(
                         chatId,
-                        `🔐 **CHANNEL VERIFICATION REQUIRED**
-
-Please join our official channel to use this bot.
-
-📢 **Channel:** ${CONFIG.channelLink}
-
-After joining, click the "I've Joined" button to verify.`,
+                        message,
                         {
                             parse_mode: 'Markdown',
                             reply_markup: keyboard
                         }
                     );
                     
-                    // Important: Don't process referral if not subscribed
+                    // Welcome channel show karo agar first time hai
+                    if (subStatus.welcome && !user.welcome_channel_shown) {
+                        await this.showWelcomeChannel(chatId, userId);
+                    }
+                    
                     return;
                 }
 
                 // ============================================
-                // PROCESS REFERRAL - ONLY AFTER SUBSCRIPTION
-                // FIXED: Only User ID, no extra text
+                // SHOW WELCOME CHANNEL (1 TIME - NO CHECK)
+                // ============================================
+                
+                if (!user.welcome_channel_shown) {
+                    await this.showWelcomeChannel(chatId, userId);
+                    user.welcome_channel_shown = true;
+                    await user.save();
+                }
+
+                // ============================================
+                // PROCESS REFERRAL
                 // ============================================
 
                 if (isNewUser && referralCode) {
-                    // Check if referralCode is a valid user ID (numeric)
-                    // Or if it starts with 'REF_' (old format, keep for compatibility)
                     let referrerId = null;
                     
                     if (!isNaN(referralCode) && referralCode.length > 5) {
-                        // Numeric user ID
                         referrerId = referralCode;
                     } else if (referralCode.startsWith('REF_')) {
-                        // Old format: Find user by referral_code
                         const referrer = await User.findOne({ referral_code: referralCode });
                         if (referrer) {
                             referrerId = referrer.telegram_id;
@@ -1366,11 +1477,11 @@ After joining, click the "I've Joined" button to verify.`,
                             const isReferrerAdmin = CONFIG.adminIds.includes(parseInt(referrerId));
                             let isReferrerSubscribed = true;
                             if (!isReferrerAdmin) {
-                                isReferrerSubscribed = await this.checkSubscription(parseInt(referrerId));
+                                const subCheck = await this.checkAllSubscriptions(parseInt(referrerId));
+                                isReferrerSubscribed = subCheck.allSubscribed;
                             }
 
                             if (isReferrerSubscribed) {
-                                // Pass new user's name
                                 const newUserUsername = `@${username || 'user'}`;
                                 await this.handleReferral(userId, referrerId, newUserUsername);
                             } else {
@@ -1411,10 +1522,9 @@ After joining, click the "I've Joined" button to verify.`,
                     protectionMsg = `\n⏳ **Protection:** Payment Pending - Send screenshot`;
                 }
 
-                // Get referral link (only user ID)
                 const referralLink = await this.getReferralLink(userId);
 
-                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v1.2**
+                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v2.0**
 
 🌟 **Your Stats:**
 • Points: ${points} ⭐
@@ -1431,8 +1541,6 @@ After joining, click the "I've Joined" button to verify.`,
 🔗 **Referral System:**
 • ${CONFIG.refersForReport} points = 1 report
 • Share: ${referralLink}
-
-📢 **Channel:** ${CONFIG.channelLink}
 
 💡 **Select a report type below to start!**
 
@@ -1462,10 +1570,10 @@ After joining, click the "I've Joined" button to verify.`,
             addLog(`📥 Callback: ${data} from @${username}`, 'INFO');
 
             try {
-                if (data === 'verify_channel') {
-                    const isSubscribed = await this.checkSubscription(userId);
+                if (data === 'verify_all_channels') {
+                    const subStatus = await this.checkAllSubscriptions(userId);
                     
-                    if (isSubscribed) {
+                    if (subStatus.allSubscribed) {
                         let user = await User.findOne({ telegram_id: userId.toString() });
                         if (user) {
                             user.is_verified = true;
@@ -1480,15 +1588,28 @@ Now you can use the bot! Send /start to continue.`,
                             { parse_mode: 'Markdown' }
                         );
                     } else {
+                        let message = `❌ **VERIFICATION FAILED**\n\n`;
+                        message += `You still need to join:\n\n`;
+                        for (const channel of subStatus.missingChannels) {
+                            message += `📢 ${channel.name}\n`;
+                            message += `🔗 ${channel.link}\n\n`;
+                        }
                         await this.bot.sendMessage(
                             chatId,
-                            `❌ **VERIFICATION FAILED**
-
-Please join the channel first:
-${CONFIG.channelLink}`,
+                            message,
                             { parse_mode: 'Markdown' }
                         );
                     }
+                    await this.bot.answerCallbackQuery(query.id);
+                    return;
+                }
+
+                if (data === 'welcome_done') {
+                    await this.bot.sendMessage(
+                        chatId,
+                        `✅ Welcome channel marked as seen!`,
+                        { parse_mode: 'Markdown' }
+                    );
                     await this.bot.answerCallbackQuery(query.id);
                     return;
                 }
@@ -1606,11 +1727,11 @@ ${CONFIG.channelLink}`,
             const userId = msg.from.id;
 
             try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
+                const subStatus = await this.checkAllSubscriptions(userId);
+                if (!subStatus.allSubscribed) {
                     await this.bot.sendMessage(
                         chatId,
-                        `❌ Please join: ${CONFIG.channelLink}`,
+                        `❌ Please join all mandatory channels first.`,
                         { parse_mode: 'Markdown' }
                     );
                     return;
@@ -1678,11 +1799,11 @@ ${referralLink}
             const userId = msg.from.id;
 
             try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
+                const subStatus = await this.checkAllSubscriptions(userId);
+                if (!subStatus.allSubscribed) {
                     await this.bot.sendMessage(
                         chatId,
-                        `❌ Please join: ${CONFIG.channelLink}`,
+                        `❌ Please join all mandatory channels first.`,
                         { parse_mode: 'Markdown' }
                     );
                     return;
@@ -1776,10 +1897,6 @@ ${referralLink}`;
 
 🛡️ **Protected targets cannot be reported!**
 
-📢 **Channel:** ${CONFIG.channelLink}
-
-🔗 **Referral:** /start with referral code
-
 💡 **/start** to begin!`;
 
             await this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
@@ -1823,9 +1940,187 @@ ${referralLink}`;
 • /logs - View logs
 • /addqr - Add QR code (send photo)
 • /removeqr - Remove QR code
-• /payments - View pending payments`;
+• /payments - View pending payments
+
+📢 **Channel Management:**
+• /addchannel id link name - Add mandatory channel
+• /removechannel id - Remove mandatory channel
+• /setwelcome id link name - Set welcome channel
+• /listchannels - List all channels`;
 
             await this.bot.sendMessage(chatId, adminMessage, { parse_mode: 'Markdown' });
+        });
+
+        // ============================================
+        // ADMIN: ADD CHANNEL
+        // ============================================
+
+        this.bot.onText(/\/addchannel (.+) (.+) (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const channelId = match[1].trim();
+            const channelLink = match[2].trim();
+            const channelName = match[3].trim();
+
+            try {
+                CONFIG.channels.mandatory.push({
+                    id: channelId,
+                    link: channelLink,
+                    name: channelName,
+                    type: 'channel'
+                });
+
+                addLog(`✅ Admin added channel: ${channelName} (${channelId})`, 'INFO');
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ **Channel Added Successfully!**
+
+📢 Name: ${channelName}
+🆔 ID: ${channelId}
+🔗 Link: ${channelLink}
+
+📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`,
+                    { parse_mode: 'Markdown' }
+                );
+
+            } catch (error) {
+                addLog(`❌ Add channel error: ${error.message}`, 'ERROR');
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+        });
+
+        // ============================================
+        // ADMIN: REMOVE CHANNEL
+        // ============================================
+
+        this.bot.onText(/\/removechannel (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const channelId = match[1].trim();
+
+            try {
+                const index = CONFIG.channels.mandatory.findIndex(c => c.id === channelId);
+                
+                if (index === -1) {
+                    await this.bot.sendMessage(chatId, '❌ Channel not found.');
+                    return;
+                }
+
+                const removed = CONFIG.channels.mandatory.splice(index, 1)[0];
+
+                addLog(`✅ Admin removed channel: ${removed.name} (${removed.id})`, 'INFO');
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ **Channel Removed Successfully!**
+
+📢 Name: ${removed.name}
+🆔 ID: ${removed.id}
+
+📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`,
+                    { parse_mode: 'Markdown' }
+                );
+
+            } catch (error) {
+                addLog(`❌ Remove channel error: ${error.message}`, 'ERROR');
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+        });
+
+        // ============================================
+        // ADMIN: SET WELCOME CHANNEL
+        // ============================================
+
+        this.bot.onText(/\/setwelcome (.+) (.+) (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const channelId = match[1].trim();
+            const channelLink = match[2].trim();
+            const channelName = match[3].trim();
+
+            try {
+                CONFIG.channels.welcome = {
+                    id: channelId,
+                    link: channelLink,
+                    name: channelName,
+                    type: 'channel',
+                    showOnce: true
+                };
+
+                addLog(`✅ Admin set welcome channel: ${channelName} (${channelId})`, 'INFO');
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ **Welcome Channel Set Successfully!**
+
+🎁 Name: ${channelName}
+🆔 ID: ${channelId}
+🔗 Link: ${channelLink}
+
+💡 This channel will show to users only once on first start.`,
+                    { parse_mode: 'Markdown' }
+                );
+
+            } catch (error) {
+                addLog(`❌ Set welcome channel error: ${error.message}`, 'ERROR');
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+        });
+
+        // ============================================
+        // ADMIN: LIST CHANNELS
+        // ============================================
+
+        this.bot.onText(/\/listchannels/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            let message = `📢 **Channel List**\n\n`;
+            message += `**Mandatory Channels (${CONFIG.channels.mandatory.length}):**\n`;
+            
+            for (const channel of CONFIG.channels.mandatory) {
+                message += `• ${channel.name}\n`;
+                message += `  🆔 ${channel.id}\n`;
+                message += `  🔗 ${channel.link}\n\n`;
+            }
+
+            if (CONFIG.channels.welcome) {
+                message += `**Welcome Channel (1 time show):**\n`;
+                message += `• ${CONFIG.channels.welcome.name}\n`;
+                message += `  🆔 ${CONFIG.channels.welcome.id}\n`;
+                message += `  🔗 ${CONFIG.channels.welcome.link}\n`;
+                message += `  💡 Shows once on first start\n\n`;
+            } else {
+                message += `**Welcome Channel:** Not set\n\n`;
+            }
+
+            message += `💡 Use /addchannel, /removechannel, /setwelcome to manage channels.`;
+
+            await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
         });
 
         // ============================================
@@ -2143,6 +2438,10 @@ Type /cancel to cancel.`
 • Total: ${stats.totalReports}
 • Success Rate: 99.99%
 
+📢 **Channels:**
+• Mandatory: ${CONFIG.channels.mandatory.length}
+• Welcome: ${CONFIG.channels.welcome ? '✅ Set' : '❌ Not set'}
+
 📊 **Recent Analytics:**
 `;
             
@@ -2323,11 +2622,11 @@ All payments are processed.`,
             addLog(`📥 Message from @${username}: ${text || 'Media'}`, 'INFO');
 
             try {
-                const isSubscribed = await this.checkSubscription(userId);
-                if (!isSubscribed) {
+                const subStatus = await this.checkAllSubscriptions(userId);
+                if (!subStatus.allSubscribed) {
                     await this.bot.sendMessage(
                         chatId,
-                        `❌ Please join: ${CONFIG.channelLink}`,
+                        `❌ Please join all mandatory channels first.`,
                         { parse_mode: 'Markdown' }
                     );
                     this.conversations.delete(userId);
@@ -3010,6 +3309,29 @@ ${evidence ? '📤 Evidence: ✅ Provided (Higher success)' : '📤 Evidence: �
     }
 
     // ============================================
+    // CHECK PROTECTED
+    // ============================================
+
+    async checkProtected(target, targetType) {
+        try {
+            const protectedItem = await Protected.findOne({
+                target_type: targetType,
+                target_id: target
+            });
+            if (protectedItem) {
+                if (protectedItem.expiry_date && new Date() > protectedItem.expiry_date) {
+                    await Protected.findOneAndDelete({ _id: protectedItem._id });
+                    return null;
+                }
+                return protectedItem;
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // ============================================
     // HELPER FUNCTIONS
     // ============================================
 
@@ -3062,7 +3384,7 @@ app.use(require('helmet')());
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        version: '1.2',
+        version: '2.0',
         uptime: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
