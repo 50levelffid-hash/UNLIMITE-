@@ -1,6 +1,6 @@
 // ============================================
-// ULTIMATE BAN BOT v3.0 - WITH POINTS PURCHASE
-// FULLY WORKING REFERRAL + BUY POINTS
+// ULTIMATE BAN BOT v3.0 - NEW REFERRAL SYSTEM
+// FULLY WORKING REFERRAL + CHANNEL VERIFICATION
 // ============================================
 
 const TelegramBot = require('node-telegram-bot-api');
@@ -35,6 +35,7 @@ const CONFIG = {
     pointPrice: 2,
     minPointsPurchase: 10,
     protectionExpiryDays: 30,
+    botUsername: 'Tgreportingban_bot', // ✅ HARDCODED BOT USERNAME
     
     channels: {
         mandatory: [
@@ -68,23 +69,13 @@ const CONFIG = {
 };
 
 // ============================================
-// BOT USERNAME CACHE
+// BOT USERNAME - HARDCODED ✅
 // ============================================
 
-let BOT_USERNAME_CACHE = null;
+const BOT_USERNAME = CONFIG.botUsername;
 
-async function getBotUsername(bot) {
-    if (!BOT_USERNAME_CACHE) {
-        try {
-            const me = await bot.getMe();
-            BOT_USERNAME_CACHE = me.username || 'Tgreportingbanbot';
-            console.log(`✅ Bot Username: @${BOT_USERNAME_CACHE}`);
-        } catch (error) {
-            console.warn('⚠️ Could not fetch bot username, using fallback');
-            BOT_USERNAME_CACHE = 'Tgreportingbanbot';
-        }
-    }
-    return BOT_USERNAME_CACHE;
+function getBotUsername() {
+    return BOT_USERNAME;
 }
 
 // ============================================
@@ -151,6 +142,8 @@ const UserSchema = new mongoose.Schema({
     points: { type: Number, default: 0 },
     referrals: { type: Number, default: 0 },
     referral_code: { type: String, unique: true, index: true },
+    referred_by: { type: String, default: null }, // ✅ Who referred this user
+    referral_claimed: { type: Boolean, default: false }, // ✅ Whether referral points claimed
     is_verified: { type: Boolean, default: false },
     welcome_channel_shown: { type: Boolean, default: false },
     reports_used: { type: Number, default: 0 },
@@ -170,7 +163,10 @@ const UserSchema = new mongoose.Schema({
     referral_count_minute: { type: Number, default: 0 },
     points_purchase_pending: { type: Number, default: 0 },
     points_purchase_ss: { type: String, default: null },
-    points_purchase_transaction: { type: String, default: null }
+    points_purchase_transaction: { type: String, default: null },
+    // ✅ Channel verification
+    channels_verified: { type: Boolean, default: false },
+    pending_referrer: { type: String, default: null } // ✅ Pending referrer if channels not joined
 }, { timestamps: true });
 
 const ReportSchema = new mongoose.Schema({
@@ -500,15 +496,15 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE BAN BOT v3.0 - WITH POINTS PURCHASE', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v3.0 - NEW REFERRAL SYSTEM', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
+        addLog(`📢 Bot Username: @${BOT_USERNAME}`, 'INFO');
         addLog(`📢 Mandatory Channels: ${CONFIG.channels.mandatory.length}`, 'INFO');
         addLog(`⚙️ Workers: ${CONFIG.maxWorkers}`, 'INFO');
         addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
         addLog(`🛡️ Protection Price: ₹${CONFIG.protectionPrice}`, 'INFO');
         addLog(`💰 Points Price: ₹${CONFIG.pointPrice}/point`, 'INFO');
-        addLog(`📊 Min Points Purchase: ${CONFIG.minPointsPurchase}`, 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog('✅ Bot is LIVE!', 'INFO');
         addLog('='.repeat(70), 'INFO');
@@ -694,9 +690,213 @@ class UltimateBot {
     // GET REFERRAL LINK
     // ============================================
 
-    async getReferralLink(userId) {
-        const botUsername = await getBotUsername(this.bot);
-        return `https://t.me/${botUsername}?start=${userId}`;
+    getReferralLink(userId) {
+        return `https://t.me/${BOT_USERNAME}?start=${userId}`;
+    }
+
+    // ============================================
+    // ✅ NEW REFERRAL SYSTEM - PROCESS REFERRAL
+    // ============================================
+
+    async processReferral(newUserId, referrerId) {
+        try {
+            addLog(`🔍 Processing referral: New user ${newUserId} referred by ${referrerId}`, 'INFO');
+
+            // Check if referrer exists
+            const referrer = await User.findOne({ telegram_id: referrerId });
+            if (!referrer) {
+                addLog(`❌ Referrer ${referrerId} not found`, 'WARN');
+                return false;
+            }
+
+            // Check if new user already exists
+            const newUser = await User.findOne({ telegram_id: newUserId.toString() });
+            if (!newUser) {
+                addLog(`❌ New user ${newUserId} not found`, 'WARN');
+                return false;
+            }
+
+            // Check if referral already claimed
+            if (newUser.referral_claimed) {
+                addLog(`⚠️ Referral already claimed for user ${newUserId}`, 'WARN');
+                return false;
+            }
+
+            // Check if user is trying to refer themselves
+            if (newUserId.toString() === referrerId) {
+                addLog(`⚠️ Self-referral attempt by ${newUserId}`, 'WARN');
+                return false;
+            }
+
+            // ✅ Check if new user has joined all channels
+            const subStatus = await this.checkAllSubscriptions(parseInt(newUserId));
+            
+            if (!subStatus.allSubscribed) {
+                // User hasn't joined all channels - save referrer for later
+                addLog(`⏳ User ${newUserId} hasn't joined all channels. Saving referrer ${referrerId} for later.`, 'INFO');
+                
+                newUser.pending_referrer = referrerId;
+                await newUser.save();
+                
+                // Show missing channels
+                await this.showMissingChannels(parseInt(newUserId), parseInt(newUserId), subStatus.missingChannels);
+                return false;
+            }
+
+            // ✅ User has joined all channels - give referral points NOW
+            await this.giveReferralPoints(newUserId, referrerId);
+            return true;
+
+        } catch (error) {
+            addLog(`❌ Process referral error: ${error.message}`, 'ERROR');
+            return false;
+        }
+    }
+
+    // ============================================
+    // ✅ GIVE REFERRAL POINTS
+    // ============================================
+
+    async giveReferralPoints(newUserId, referrerId) {
+        try {
+            const referrer = await User.findOne({ telegram_id: referrerId });
+            if (!referrer) {
+                addLog(`❌ Referrer ${referrerId} not found`, 'WARN');
+                return false;
+            }
+
+            const newUser = await User.findOne({ telegram_id: newUserId.toString() });
+            if (!newUser) {
+                addLog(`❌ New user ${newUserId} not found`, 'WARN');
+                return false;
+            }
+
+            // Check if already claimed
+            if (newUser.referral_claimed) {
+                addLog(`⚠️ Referral already claimed for user ${newUserId}`, 'WARN');
+                return false;
+            }
+
+            // ✅ Add point to referrer
+            referrer.points += 1;
+            referrer.referrals += 1;
+            await referrer.save();
+
+            // ✅ Mark referral as claimed
+            newUser.referral_claimed = true;
+            newUser.referred_by = referrerId;
+            newUser.pending_referrer = null;
+            await newUser.save();
+
+            // ✅ Update analytics
+            await Analytics.updateOne(
+                { date: { $gte: new Date().setHours(0,0,0,0) } },
+                { $inc: { total_referrals: 1 } },
+                { upsert: true }
+            );
+
+            addLog(`✅ Referral successful! ${newUserId} referred by ${referrerId}`, 'INFO');
+
+            // ✅ Notify referrer
+            try {
+                const referralLink = this.getReferralLink(referrerId);
+                await this.bot.sendMessage(
+                    parseInt(referrerId),
+                    `🎉 **New Referral Successful!**\n\n` +
+                    `👤 @${newUser.username || 'user'} joined and verified all channels!\n` +
+                    `⭐ You earned 1 point!\n` +
+                    `📊 Total Points: ${referrer.points}\n` +
+                    `📊 Total Referrals: ${referrer.referrals}\n\n` +
+                    `🔗 Keep sharing: ${referralLink}\n\n` +
+                    `💡 ${CONFIG.refersForReport} points = 1 report\n` +
+                    `🎯 ${CONFIG.reportsPerTarget} reports = 99.99% ban`
+                );
+            } catch (e) {
+                addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
+            }
+
+            // ✅ Notify new user
+            try {
+                await this.bot.sendMessage(
+                    parseInt(newUserId),
+                    `✅ **Verification Complete!**\n\n` +
+                    `You have successfully joined all channels!\n` +
+                    `🎉 Your referrer has been credited with 1 point!\n\n` +
+                    `🔥 You can now use all bot features!\n` +
+                    `💡 Send /start to continue.`
+                );
+            } catch (e) {
+                addLog(`❌ Failed to notify new user: ${e.message}`, 'ERROR');
+            }
+
+            // ✅ Notify admins
+            for (const adminId of CONFIG.adminIds) {
+                try {
+                    await this.bot.sendMessage(
+                        adminId,
+                        `👥 **New Referral Success!**\n\n` +
+                        `👤 Referrer: @${referrer.username}\n` +
+                        `👤 New User: @${newUser.username || 'user'}\n` +
+                        `🆔 Referrer ID: ${referrerId}\n` +
+                        `🆔 New User ID: ${newUserId}\n` +
+                        `⭐ Points Earned: 1\n\n` +
+                        `📊 Referrer Total Points: ${referrer.points}\n` +
+                        `📊 Referrer Total Referrals: ${referrer.referrals}`
+                    );
+                } catch (e) {
+                    addLog(`❌ Failed to notify admin: ${e.message}`, 'ERROR');
+                }
+            }
+
+            return true;
+
+        } catch (error) {
+            addLog(`❌ Give referral points error: ${error.message}`, 'ERROR');
+            return false;
+        }
+    }
+
+    // ============================================
+    // ✅ HANDLE CHANNEL VERIFICATION - CHECK PENDING REFERRALS
+    // ============================================
+
+    async handleChannelVerification(userId) {
+        try {
+            const user = await User.findOne({ telegram_id: userId.toString() });
+            if (!user) {
+                return;
+            }
+
+            // ✅ Check if user has pending referral
+            if (user.pending_referrer && !user.referral_claimed) {
+                addLog(`🔍 User ${userId} has pending referrer ${user.pending_referrer}. Checking channels...`, 'INFO');
+
+                // Check if all channels are joined now
+                const subStatus = await this.checkAllSubscriptions(parseInt(userId));
+                
+                if (subStatus.allSubscribed) {
+                    // ✅ All channels joined - give referral points NOW!
+                    addLog(`✅ User ${userId} joined all channels. Giving referral points...`, 'INFO');
+                    await this.giveReferralPoints(userId, user.pending_referrer);
+                    
+                    // Show main menu
+                    await this.bot.sendMessage(
+                        parseInt(userId),
+                        `✅ **All Channels Verified!**\n\n` +
+                        `Your referral points have been credited!\n` +
+                        `⭐ Referrer got 1 point!\n\n` +
+                        `🔥 Use /start to begin.`,
+                        this.getMainMenu()
+                    );
+                } else {
+                    // Still missing channels
+                    await this.showMissingChannels(parseInt(userId), parseInt(userId), subStatus.missingChannels);
+                }
+            }
+
+        } catch (error) {
+            addLog(`❌ Handle channel verification error: ${error.message}`, 'ERROR');
+        }
     }
 
     // ============================================
@@ -724,8 +924,7 @@ class UltimateBot {
             const remaining = reportsAvailable - reportsUsed;
 
             if (remaining <= 0) {
-                const botUsername = await getBotUsername(this.bot);
-                const referralLink = await this.getReferralLink(userId);
+                const referralLink = this.getReferralLink(userId);
                 await this.bot.sendMessage(
                     chatId,
                     `❌ Insufficient Reports!\n\nNeed ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Earn more: ${referralLink}\n\n💰 Or buy points using "Buy Points" button!`
@@ -1036,7 +1235,6 @@ class UltimateBot {
                 );
             }
 
-            // ✅ NEW: Forward to admin with 3 options: Approve, Reject, Reply
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const payment = await Payment.findOne({ transaction_id: transactionId });
@@ -1060,7 +1258,6 @@ class UltimateBot {
                     caption += `🆔 Transaction: ${transactionId}\n\n`;
                     caption += `📌 Choose Action:`;
 
-                    // ✅ 3 OPTIONS: Approve, Reject, Reply to User
                     const keyboard = {
                         inline_keyboard: [
                             [
@@ -1211,7 +1408,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE ADMIN REPLY TO USER - NEW ✅
+    // HANDLE ADMIN REPLY TO USER
     // ============================================
 
     async handleAdminReply(chatId, adminId, transactionId) {
@@ -1249,18 +1446,16 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE ADMIN REPLY MESSAGE - NEW ✅
+    // HANDLE ADMIN REPLY MESSAGE
     // ============================================
 
     async handleAdminReplyMessage(chatId, adminId, text, transactionId, userId) {
         try {
-            // Send message to user
             await this.bot.sendMessage(
                 parseInt(userId),
                 `📩 Message from Admin\n\n${text}`
             );
 
-            // Update payment with admin note
             await Payment.findOneAndUpdate(
                 { transaction_id: transactionId },
                 { admin_note: text }
@@ -1370,82 +1565,12 @@ class UltimateBot {
     }
 
     // ============================================
-    // HANDLE REFERRAL - FULLY FIXED (No Limit)
-    // ============================================
-
-    async handleReferral(userId, referrerId, newUserUsername = null) {
-        try {
-            const subStatus = await this.checkAllSubscriptions(parseInt(referrerId));
-            if (!subStatus.allSubscribed) {
-                addLog(`❌ Referrer ${referrerId} not subscribed to all channels, referral denied`, 'WARN');
-                try {
-                    await this.bot.sendMessage(
-                        parseInt(referrerId),
-                        `❌ Referral Failed!\n\nYou need to join ALL channels to earn referral points.\n\nPlease use /start to see the channels you need to join.`
-                    );
-                } catch (e) {}
-                return false;
-            }
-
-            const referrer = await User.findOne({ telegram_id: referrerId });
-            if (!referrer) {
-                addLog(`❌ Referrer ${referrerId} not found`, 'WARN');
-                return false;
-            }
-
-            // ✅ NO LIMIT - Unlimited referrals
-            referrer.points += 1;
-            referrer.referrals += 1;
-            await referrer.save();
-
-            await Analytics.updateOne(
-                { date: { $gte: new Date().setHours(0,0,0,0) } },
-                { $inc: { total_referrals: 1 } },
-                { upsert: true }
-            );
-
-            addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
-
-            const referralLink = await this.getReferralLink(referrer.telegram_id);
-            try {
-                const newUser = await User.findOne({ telegram_id: userId });
-                const newName = newUserUsername || `@${newUser?.username || 'user'}`;
-                await this.bot.sendMessage(
-                    parseInt(referrerId),
-                    `🎉 New Referral!\n\n👤 ${newName} joined using your referral link!\n⭐ You earned 1 point!\n📊 Total Points: ${referrer.points}\n\n🔗 Keep sharing: ${referralLink}\n\n💡 ${CONFIG.refersForReport} points = 1 report\n🎯 ${CONFIG.reportsPerTarget} reports = 99.99% ban`
-                );
-            } catch (e) {
-                addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
-            }
-
-            for (const adminId of CONFIG.adminIds) {
-                try {
-                    const newUser = await User.findOne({ telegram_id: userId });
-                    const newName = newUserUsername || `@${newUser?.username || 'user'}`;
-                    await this.bot.sendMessage(
-                        adminId,
-                        `👥 New Referral!\n\n👤 Referrer: @${referrer.username}\n👤 New User: ${newName}\n🆔 Referrer ID: ${referrerId}\n🆔 New User ID: ${userId}\n⭐ Points Earned: 1\n\n📊 Referrer Total Points: ${referrer.points}`
-                    );
-                } catch (e) {
-                    addLog(`❌ Failed to notify admin about referral: ${e.message}`, 'ERROR');
-                }
-            }
-
-            return true;
-
-        } catch (error) {
-            addLog(`❌ Referral error: ${error.message}`, 'ERROR');
-            return false;
-        }
-    }
-
-    // ============================================
     // COMMANDS
     // ============================================
 
     setupCommands() {
         // ============================================
-        // START COMMAND
+        // START COMMAND - NEW REFERRAL SYSTEM ✅
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1458,8 +1583,6 @@ class UltimateBot {
             addLog(`📥 /start from @${username} (${userId})`, 'INFO');
 
             try {
-                const botUsername = await getBotUsername(this.bot);
-
                 let user = await User.findOne({ telegram_id: userId.toString() });
                 let isNewUser = false;
 
@@ -1474,23 +1597,20 @@ class UltimateBot {
                         is_verified: false,
                         protection_status: 'none',
                         welcome_channel_shown: false,
-                        points_purchase_pending: 0
+                        points_purchase_pending: 0,
+                        referral_claimed: false,
+                        pending_referrer: null,
+                        channels_verified: false
                     });
                     await user.save();
                     addLog(`👤 New user created: @${username || user.username}`, 'INFO');
                 }
 
-                const subStatus = await this.checkAllSubscriptions(userId);
-                
-                if (!subStatus.allSubscribed) {
-                    addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
-                    await this.showAllChannels(chatId, userId, subStatus.missingChannels);
-                    return;
-                }
-
+                // ✅ NEW REFERRAL SYSTEM - Process referral code
                 if (isNewUser && referralCode) {
                     let referrerId = null;
                     
+                    // Check if referral code is user ID or REF_ code
                     if (!isNaN(referralCode) && referralCode.length > 5) {
                         referrerId = referralCode;
                     } else if (referralCode.startsWith('REF_')) {
@@ -1500,29 +1620,86 @@ class UltimateBot {
                         }
                     }
                     
+                    // ✅ Valid referral code found
                     if (referrerId && referrerId !== userId.toString()) {
                         const referrer = await User.findOne({ telegram_id: referrerId });
                         
                         if (referrer) {
+                            // Check if referrer is admin (admins don't need channel subscription)
                             const isReferrerAdmin = CONFIG.adminIds.includes(parseInt(referrerId));
-                            let isReferrerSubscribed = true;
+                            
                             if (!isReferrerAdmin) {
+                                // ✅ Check if referrer is subscribed to all channels
                                 const subCheck = await this.checkAllSubscriptions(parseInt(referrerId));
-                                isReferrerSubscribed = subCheck.allSubscribed;
+                                if (!subCheck.allSubscribed) {
+                                    addLog(`⚠️ Referrer ${referrer.username} not subscribed to all channels, referral pending`, 'WARN');
+                                    // Save referrer for later when they subscribe
+                                    user.pending_referrer = referrerId;
+                                    await user.save();
+                                    
+                                    await this.bot.sendMessage(
+                                        chatId,
+                                        `🔗 **Referral Detected!**\n\n` +
+                                        `You were referred by @${referrer.username}.\n\n` +
+                                        `⚠️ But your referrer needs to join ALL channels first to earn points.\n\n` +
+                                        `📢 Please ask your referrer to join all channels and try again.\n\n` +
+                                        `💡 Use /start again after they join.`
+                                    );
+                                    return;
+                                }
                             }
-
-                            if (isReferrerSubscribed) {
-                                const newUserUsername = `@${username || 'user'}`;
-                                await this.handleReferral(userId, referrerId, newUserUsername);
-                            } else {
-                                addLog(`⚠️ Referrer ${referrer.username} not subscribed, referral ignored`, 'WARN');
+                            
+                            // ✅ Referrer is subscribed - process referral
+                            addLog(`✅ Referrer ${referrer.username} is subscribed. Processing referral...`, 'INFO');
+                            
+                            // ✅ Check if new user has joined all channels
+                            const subStatus = await this.checkAllSubscriptions(userId);
+                            
+                            if (!subStatus.allSubscribed) {
+                                // User hasn't joined channels - save referrer for later
+                                addLog(`⏳ New user ${userId} hasn't joined channels. Saving referrer ${referrerId}.`, 'INFO');
+                                
+                                user.pending_referrer = referrerId;
+                                await user.save();
+                                
+                                // Show channels to join
+                                await this.showAllChannels(chatId, userId, subStatus.missingChannels);
+                                return;
                             }
+                            
+                            // ✅ All channels joined - give referral points NOW!
+                            await this.giveReferralPoints(userId, referrerId);
                         }
                     }
                 }
 
+                // ✅ Check if user has pending referral (came from channel verification)
+                if (user.pending_referrer && !user.referral_claimed) {
+                    const subStatus = await this.checkAllSubscriptions(userId);
+                    
+                    if (subStatus.allSubscribed) {
+                        // All channels joined - give referral points
+                        await this.giveReferralPoints(userId, user.pending_referrer);
+                    } else {
+                        // Still missing channels
+                        await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
+                        return;
+                    }
+                }
+
+                // ✅ Regular channel check
+                const subStatus = await this.checkAllSubscriptions(userId);
+                
+                if (!subStatus.allSubscribed) {
+                    addLog(`🔐 User @${username} not subscribed to all channels`, 'INFO');
+                    await this.showAllChannels(chatId, userId, subStatus.missingChannels);
+                    return;
+                }
+
+                // ✅ User is verified
                 if (!user.is_verified) {
                     user.is_verified = true;
+                    user.channels_verified = true;
                     await user.save();
                     addLog(`✅ User @${username} verified`, 'INFO');
                 }
@@ -1548,28 +1725,28 @@ class UltimateBot {
                     protectionMsg = `\n🛡️ Protection: ⏳ Payment Pending - Send screenshot`;
                 }
 
-                const referralLink = await this.getReferralLink(userId);
+                const referralLink = this.getReferralLink(userId);
 
-                const welcomeMessage = `🔥 ULTIMATE BAN BOT v3.0
+                const welcomeMessage = `🔥 **ULTIMATE BAN BOT v3.0**
 
-🌟 Your Stats:
+🌟 **Your Stats:**
 • Points: ${points} ⭐
 • Referrals: ${user.referrals || 0}
 • Reports Available: ${Math.max(0, remaining)}
 • Reports Used: ${reportsUsed}${protectionMsg}
 
-⚡ Features:
+⚡ **Features:**
 • 99.99% Success Rate
 • ${CONFIG.reportsPerTarget} Reports per Target
 • 3 Report Types: Account, Channel, Group
 • 🛡️ Protection System
 
-💰 Points Purchase:
+💰 **Points Purchase:**
 • ₹${CONFIG.pointPrice} per point
 • Minimum: ${CONFIG.minPointsPurchase} points
 • Use "Buy Points" button
 
-🔗 Referral System:
+🔗 **Referral System:**
 • ${CONFIG.refersForReport} points = 1 report
 • ${CONFIG.reportsPerTarget} reports = 99.99% ban
 • Share: ${referralLink}
@@ -1578,7 +1755,10 @@ class UltimateBot {
 
 /help for more info`;
 
-                await this.bot.sendMessage(chatId, welcomeMessage, this.getMainMenu());
+                await this.bot.sendMessage(chatId, welcomeMessage, {
+                    parse_mode: 'Markdown',
+                    ...this.getMainMenu()
+                });
 
             } catch (error) {
                 addLog(`❌ Start error: ${error.message}`, 'ERROR');
@@ -1589,7 +1769,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // CALLBACK QUERY HANDLER - WITH REPLY OPTION ✅
+        // CALLBACK QUERY HANDLER
         // ============================================
 
         this.bot.on('callback_query', async (query) => {
@@ -1608,12 +1788,18 @@ class UltimateBot {
                         let user = await User.findOne({ telegram_id: userId.toString() });
                         if (user) {
                             user.is_verified = true;
+                            user.channels_verified = true;
                             await user.save();
+                        }
+
+                        // ✅ Check if user has pending referral
+                        if (user && user.pending_referrer && !user.referral_claimed) {
+                            await this.giveReferralPoints(userId, user.pending_referrer);
                         }
 
                         await this.bot.sendMessage(
                             chatId,
-                            `✅ VERIFICATION SUCCESSFUL!\n\nNow you can use the bot! Send /start to continue.`
+                            `✅ **VERIFICATION SUCCESSFUL!**\n\nNow you can use the bot! Send /start to continue.`
                         );
                     } else {
                         await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -1639,7 +1825,6 @@ class UltimateBot {
                     return;
                 }
 
-                // ✅ Approve
                 if (data.startsWith('approve_')) {
                     const transactionId = data.replace('approve_', '');
                     await this.handlePaymentApproval(chatId, userId, transactionId, true);
@@ -1647,7 +1832,6 @@ class UltimateBot {
                     return;
                 }
 
-                // ✅ Reject
                 if (data.startsWith('reject_')) {
                     const transactionId = data.replace('reject_', '');
                     await this.handlePaymentApproval(chatId, userId, transactionId, false);
@@ -1655,7 +1839,6 @@ class UltimateBot {
                     return;
                 }
 
-                // ✅ NEW: Reply to User
                 if (data.startsWith('reply_')) {
                     const transactionId = data.replace('reply_', '');
                     await this.handleAdminReply(chatId, userId, transactionId);
@@ -1808,7 +1991,7 @@ class UltimateBot {
                 const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
                 const reportsUsed = user.reports_used || 0;
                 const remaining = reportsAvailable - reportsUsed;
-                const referralLink = await this.getReferralLink(userId);
+                const referralLink = this.getReferralLink(userId);
 
                 let protectionInfo = '❌ None';
                 if (user.protection_status === 'active') {
@@ -1824,7 +2007,7 @@ class UltimateBot {
                     protectionInfo = '⏳ Payment Pending';
                 }
 
-                const statsMessage = `📊 Your Stats
+                const statsMessage = `📊 **Your Stats**
 
 👤 User: @${user.username || 'unknown'}
 ⭐ Points: ${points}
@@ -1848,7 +2031,7 @@ ${referralLink}
 
 💡 Higher Evidence = Higher Ban Chance!`;
 
-                await this.bot.sendMessage(chatId, statsMessage);
+                await this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
 
             } catch (error) {
                 addLog(`❌ Stats error: ${error.message}`, 'ERROR');
@@ -1857,7 +2040,7 @@ ${referralLink}
         });
 
         // ============================================
-        // REFER & EARN - FIXED
+        // REFER & EARN
         // ============================================
 
         this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
@@ -1879,9 +2062,9 @@ ${referralLink}
 
                 const points = user.points || 0;
                 const nextReport = CONFIG.refersForReport - (points % CONFIG.refersForReport);
-                const referralLink = await this.getReferralLink(userId);
+                const referralLink = this.getReferralLink(userId);
 
-                const referMessage = `🔗 Refer & Earn Points!
+                const referMessage = `🔗 **Refer & Earn Points!**
 
 📊 Your Stats:
 • Points: ${points} ⭐
@@ -1893,14 +2076,16 @@ ${referralLink}
 3. ${CONFIG.refersForReport} points = 1 report (${CONFIG.reportsPerTarget} reports for 99.99% ban)
 4. No limit on referrals!
 
-⚠️ Important: You must stay subscribed to ALL channels to earn points!
+⚠️ Important: 
+• Both you AND the new user must join ALL channels
+• After new user joins all channels, you get points instantly!
 
 💰 Or buy points using "Buy Points" button!
 
 🔗 Your Referral Link:
 ${referralLink}`;
 
-                await this.bot.sendMessage(chatId, referMessage);
+                await this.bot.sendMessage(chatId, referMessage, { parse_mode: 'Markdown' });
 
             } catch (error) {
                 addLog(`❌ Refer error: ${error.message}`, 'ERROR');
@@ -1915,16 +2100,16 @@ ${referralLink}`;
         this.bot.onText(/ℹ️ Help/, async (msg) => {
             const chatId = msg.chat.id;
             
-            const helpMessage = `ℹ️ Help & Guide
+            const helpMessage = `ℹ️ **Help & Guide**
 
-🔥 How to Ban:
+🔥 **How to Ban:**
 1. Click "🎯 Report Account", "📢 Report Channel", or "👥 Report Group"
 2. Enter @username or link
 3. Upload evidence (screenshots, links, descriptions)
 4. Bot sends ${CONFIG.reportsPerTarget} reports
 5. 99.99% ban chance!
 
-🛡️ Protection System:
+🛡️ **Protection System:**
 1. Click "🛡️ Protection"
 2. Select what to protect (Account/Channel/Group)
 3. Pay ₹${CONFIG.protectionPrice} via QR
@@ -1933,7 +2118,7 @@ ${referralLink}`;
 6. Send the target you want to protect
 7. Target is protected for ${CONFIG.protectionExpiryDays} days!
 
-💰 Points Purchase System:
+💰 **Points Purchase System:**
 1. Click "💰 Buy Points"
 2. Enter number of points (minimum ${CONFIG.minPointsPurchase})
 3. ₹${CONFIG.pointPrice} per point
@@ -1942,28 +2127,30 @@ ${referralLink}`;
 6. Admin approves
 7. Points added to your account!
 
-📊 Points System:
+📊 **Points System:**
 • ${CONFIG.refersForReport} points = 1 report
 • Refer others to earn points
 • No limit on referrals!
+• Both users must join ALL channels
 
-📤 Evidence Guide (Important!):
+📤 **Evidence Guide (Important!):**
 
 📸 Screenshots: Chat logs, violations, profiles
 🔗 Links: Harmful content, scam websites
 📝 Description: What happened, when, where
 🎥 Videos: Screen recordings of violations
 
-💡 HIGHER EVIDENCE = HIGHER BAN CHANCE!
+💡 **HIGHER EVIDENCE = HIGHER BAN CHANCE!**
 
-Evidence Type | Ban Chance
-Screenshots + Description + Links | 95%
-Screenshots + Description | 85%
-Screenshots Only | 70%
-Description Only | 40%
-No Evidence (Skip) | 5%
+| Evidence Type | Ban Chance |
+|---------------|------------|
+| Screenshots + Description + Links | 95% |
+| Screenshots + Description | 85% |
+| Screenshots Only | 70% |
+| Description Only | 40% |
+| No Evidence (Skip) | 5% |
 
-⚠️ Success Factors:
+⚠️ **Success Factors:**
 • Real violation
 • Strong evidence
 • ${CONFIG.reportsPerTarget} reports
@@ -1971,9 +2158,9 @@ No Evidence (Skip) | 5%
 
 🛡️ Protected targets cannot be reported!
 
-💡 /start to begin!`;
+💡 **/start** to begin!`;
 
-            await this.bot.sendMessage(chatId, helpMessage);
+            await this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
         });
 
         // ============================================
@@ -1993,18 +2180,20 @@ No Evidence (Skip) | 5%
             const protectedCount = await Protected.countDocuments();
             const pendingPayments = await Payment.countDocuments({ status: 'pending' });
             const pendingPoints = await User.countDocuments({ points_purchase_pending: { $gt: 0 } });
+            const pendingReferrals = await User.countDocuments({ pending_referrer: { $ne: null }, referral_claimed: false });
 
-            const adminMessage = `👑 Admin Panel
+            const adminMessage = `👑 **Admin Panel**
 
-📊 Stats:
+📊 **Stats:**
 • Users: ${stats.totalUsers}
 • Reports: ${stats.totalReports}
 • Queue: ${this.queue.length}
 • Protected: ${protectedCount}
 • Pending Payments: ${pendingPayments}
 • Pending Points Purchases: ${pendingPoints}
+• Pending Referrals: ${pendingReferrals}
 
-🔧 Commands:
+🔧 **Commands:**
 • /addpoints @username/userid 5 - Add points
 • /removepoints @username/userid 5 - Remove points
 • /setpoints @username/userid 10 - Set points
@@ -2019,16 +2208,16 @@ No Evidence (Skip) | 5%
 • /removeqr - Remove QR code
 • /payments - View pending payments
 
-📢 Channel Management:
+📢 **Channel Management:**
 • /addchannel id link name - Add mandatory channel
 • /removechannel id - Remove mandatory channel
 • /listchannels - List all channels`;
 
-            await this.bot.sendMessage(chatId, adminMessage);
+            await this.bot.sendMessage(chatId, adminMessage, { parse_mode: 'Markdown' });
         });
 
         // ============================================
-        // ADMIN: ADD POINTS - BY USERNAME OR USERID ✅
+        // ADMIN: ADD POINTS - BY USERNAME OR USERID
         // ============================================
 
         this.bot.onText(/\/addpoints (.+) (.+)/, async (msg, match) => {
@@ -2069,13 +2258,15 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Points Added!\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Added: ${points}\n📊 Total Points: ${user.points}`
+                    `✅ **Points Added!**\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Added: ${points}\n📊 Total Points: ${user.points}`,
+                    { parse_mode: 'Markdown' }
                 );
 
                 try {
                     await this.bot.sendMessage(
                         parseInt(user.telegram_id),
-                        `⭐ Admin Added Points!\n\n📊 +${points} points added to your account!\n⭐ Total Points: ${user.points}`
+                        `⭐ **Admin Added Points!**\n\n📊 +${points} points added to your account!\n⭐ Total Points: ${user.points}`,
+                        { parse_mode: 'Markdown' }
                     );
                 } catch (e) {}
 
@@ -2086,7 +2277,7 @@ No Evidence (Skip) | 5%
         });
 
         // ============================================
-        // ADMIN: REMOVE POINTS - BY USERNAME OR USERID ✅
+        // ADMIN: REMOVE POINTS - BY USERNAME OR USERID
         // ============================================
 
         this.bot.onText(/\/removepoints (.+) (.+)/, async (msg, match) => {
@@ -2135,13 +2326,15 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Points Removed!\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Removed: ${points}\n📊 Total Points: ${user.points}`
+                    `✅ **Points Removed!**\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Removed: ${points}\n📊 Total Points: ${user.points}`,
+                    { parse_mode: 'Markdown' }
                 );
 
                 try {
                     await this.bot.sendMessage(
                         parseInt(user.telegram_id),
-                        `❌ Admin Removed Points!\n\n📊 -${points} points removed from your account!\n⭐ Total Points: ${user.points}`
+                        `❌ **Admin Removed Points!**\n\n📊 -${points} points removed from your account!\n⭐ Total Points: ${user.points}`,
+                        { parse_mode: 'Markdown' }
                     );
                 } catch (e) {}
 
@@ -2152,7 +2345,7 @@ No Evidence (Skip) | 5%
         });
 
         // ============================================
-        // ADMIN: SET POINTS - BY USERNAME OR USERID ✅
+        // ADMIN: SET POINTS - BY USERNAME OR USERID
         // ============================================
 
         this.bot.onText(/\/setpoints (.+) (.+)/, async (msg, match) => {
@@ -2193,13 +2386,15 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Points Set!\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Set: ${points}`
+                    `✅ **Points Set!**\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Set: ${points}`,
+                    { parse_mode: 'Markdown' }
                 );
 
                 try {
                     await this.bot.sendMessage(
                         parseInt(user.telegram_id),
-                        `⭐ Admin Set Points!\n\n📊 Your points have been set to ${points}!\n⭐ Total Points: ${user.points}`
+                        `⭐ **Admin Set Points!**\n\n📊 Your points have been set to ${points}!\n⭐ Total Points: ${user.points}`,
+                        { parse_mode: 'Markdown' }
                     );
                 } catch (e) {}
 
@@ -2239,7 +2434,8 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Channel Added Successfully!\n\n📢 Name: ${channelName}\n🆔 ID: ${channelId}\n🔗 Link: ${channelLink}\n\n📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`
+                    `✅ **Channel Added Successfully!**\n\n📢 Name: ${channelName}\n🆔 ID: ${channelId}\n🔗 Link: ${channelLink}\n\n📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`,
+                    { parse_mode: 'Markdown' }
                 );
 
             } catch (error) {
@@ -2277,7 +2473,8 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Channel Removed Successfully!\n\n📢 Name: ${removed.name}\n🆔 ID: ${removed.id}\n\n📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`
+                    `✅ **Channel Removed Successfully!**\n\n📢 Name: ${removed.name}\n🆔 ID: ${removed.id}\n\n📊 Total Mandatory Channels: ${CONFIG.channels.mandatory.length}`,
+                    { parse_mode: 'Markdown' }
                 );
 
             } catch (error) {
@@ -2299,7 +2496,7 @@ No Evidence (Skip) | 5%
                 return;
             }
 
-            let message = `📢 Channel List\n\n`;
+            let message = `📢 **Channel List**\n\n`;
             message += `Mandatory Channels (${CONFIG.channels.mandatory.length}):\n`;
             
             for (const channel of CONFIG.channels.mandatory) {
@@ -2359,7 +2556,8 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Protected Successfully!\n\n🛡️ Target: ${target}\n📋 Type: ${targetType}`
+                    `✅ **Protected Successfully!**\n\n🛡️ Target: ${target}\n📋 Type: ${targetType}`,
+                    { parse_mode: 'Markdown' }
                 );
             } catch (error) {
                 addLog(`❌ Protect error: ${error.message}`, 'ERROR');
@@ -2394,7 +2592,8 @@ No Evidence (Skip) | 5%
                 addLog(`🛡️ Admin unprotected ${target}`, 'INFO');
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ Unprotected Successfully!\n\n🛡️ Target: ${target}`
+                    `✅ **Unprotected Successfully!**\n\n🛡️ Target: ${target}`,
+                    { parse_mode: 'Markdown' }
                 );
             } catch (error) {
                 addLog(`❌ Unprotect error: ${error.message}`, 'ERROR');
@@ -2431,7 +2630,8 @@ No Evidence (Skip) | 5%
                     addLog(`🚫 Admin banned user @${target}`, 'INFO');
                     await this.bot.sendMessage(
                         chatId,
-                        `✅ User Banned Successfully!\n\n👤 User: ${target}\n🚫 Status: Banned`
+                        `✅ **User Banned Successfully!**\n\n👤 User: ${target}\n🚫 Status: Banned`,
+                        { parse_mode: 'Markdown' }
                     );
                 } else {
                     await this.bot.sendMessage(chatId, '❌ User not found.');
@@ -2471,7 +2671,8 @@ No Evidence (Skip) | 5%
                     addLog(`✅ Admin unbanned user @${target}`, 'INFO');
                     await this.bot.sendMessage(
                         chatId,
-                        `✅ User Unbanned Successfully!\n\n👤 User: ${target}\n✅ Status: Active`
+                        `✅ **User Unbanned Successfully!**\n\n👤 User: ${target}\n✅ Status: Active`,
+                        { parse_mode: 'Markdown' }
                     );
                 } else {
                     await this.bot.sendMessage(chatId, '❌ User not found.');
@@ -2499,7 +2700,7 @@ No Evidence (Skip) | 5%
             addLog(`📢 Admin ${userId} started broadcast`, 'INFO');
             await this.bot.sendMessage(
                 chatId,
-                `📢 Broadcast Message\n\nSend your broadcast message.\n\nType /cancel to cancel.`
+                `📢 **Broadcast Message**\n\nSend your broadcast message.\n\nType /cancel to cancel.`
             );
         });
 
@@ -2518,24 +2719,24 @@ No Evidence (Skip) | 5%
 
             const stats = await this.getAdminStats();
             
-            let statsMessage = `📊 Detailed Stats
+            let statsMessage = `📊 **Detailed Stats**
 
-📈 Users:
+📈 **Users:**
 • Total: ${stats.totalUsers}
 • Active (7d): ${stats.activeUsers || 0}
 
-📨 Reports:
+📨 **Reports:**
 • Total: ${stats.totalReports}
 • Success Rate: 99.99%
 
-📢 Channels:
+📢 **Channels:**
 • Mandatory: ${CONFIG.channels.mandatory.length}
 
-💰 Points Purchase:
+💰 **Points Purchase:**
 • Price: ₹${CONFIG.pointPrice}/point
 • Minimum: ${CONFIG.minPointsPurchase} points
 
-📊 Recent Analytics:\n`;
+📊 **Recent Analytics:**\n`;
             
             const analytics = await Analytics.find().sort({ date: -1 }).limit(5);
             if (analytics.length === 0) {
@@ -2563,7 +2764,7 @@ No Evidence (Skip) | 5%
             }
 
             const logs = getLogs(20);
-            let logMessage = '📋 Recent Logs\n\n';
+            let logMessage = '📋 **Recent Logs**\n\n';
             
             if (logs.length === 0) {
                 logMessage += 'No logs found.';
@@ -2597,7 +2798,7 @@ No Evidence (Skip) | 5%
             this.conversations.set(userId, { step: 'addqr_photo' });
             await this.bot.sendMessage(
                 chatId,
-                `📤 Add QR Code\n\nPlease send the QR code image as a photo.\n\nType /cancel to cancel.`
+                `📤 **Add QR Code**\n\nPlease send the QR code image as a photo.\n\nType /cancel to cancel.`
             );
         });
 
@@ -2620,7 +2821,7 @@ No Evidence (Skip) | 5%
 
                 await this.bot.sendMessage(
                     chatId,
-                    `✅ QR Code Removed!\n\nNo QR code will be shown to users until a new one is added.`
+                    `✅ **QR Code Removed!**\n\nNo QR code will be shown to users until a new one is added.`
                 );
             } catch (error) {
                 addLog(`❌ Remove QR error: ${error.message}`, 'ERROR');
@@ -2647,12 +2848,12 @@ No Evidence (Skip) | 5%
                 if (payments.length === 0) {
                     await this.bot.sendMessage(
                         chatId,
-                        `📋 No Pending Payments\n\nAll payments are processed.`
+                        `📋 **No Pending Payments**\n\nAll payments are processed.`
                     );
                     return;
                 }
 
-                let paymentMessage = `📋 Pending Payments (${payments.length})\n\n`;
+                let paymentMessage = `📋 **Pending Payments (${payments.length})**\n\n`;
                 for (const p of payments) {
                     paymentMessage += `🆔 ${p.transaction_id}\n`;
                     paymentMessage += `👤 @${p.username || 'unknown'}\n`;
@@ -2677,7 +2878,7 @@ No Evidence (Skip) | 5%
     }
 
     // ============================================
-    // MESSAGE HANDLER - WITH ADMIN REPLY ✅
+    // MESSAGE HANDLER
     // ============================================
 
     setupMessageHandler() {
@@ -2733,7 +2934,7 @@ No Evidence (Skip) | 5%
                 }
 
                 // ============================================
-                // ADMIN REPLY - NEW ✅
+                // ADMIN REPLY
                 // ============================================
 
                 if (conversation.step === 'admin_reply') {
@@ -3017,7 +3218,7 @@ Skip Evidence | 5%
 
                         await this.bot.sendMessage(
                             chatId,
-                            `✅ QR Code Added Successfully!\n\n💰 Amount: ₹${CONFIG.protectionPrice}\n\nThis QR code will be shown to users for protection payments and points purchase.`
+                            `✅ **QR Code Added Successfully!**\n\n💰 Amount: ₹${CONFIG.protectionPrice}\n\nThis QR code will be shown to users for protection payments and points purchase.`
                         );
 
                         this.conversations.delete(userId);
