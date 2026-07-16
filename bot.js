@@ -32,8 +32,8 @@ const CONFIG = {
     reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'),
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
     protectionPrice: parseInt(process.env.PROTECTION_PRICE || '40'),
-    pointPrice: 2, // ₹2 per point
-    minPointsPurchase: 10, // Minimum 10 points
+    pointPrice: 2,
+    minPointsPurchase: 10,
     protectionExpiryDays: 30,
     
     channels: {
@@ -168,7 +168,6 @@ const UserSchema = new mongoose.Schema({
     protection_expiry: { type: Date, default: null },
     last_referral_time: { type: Date, default: null },
     referral_count_minute: { type: Number, default: 0 },
-    // Points Purchase
     points_purchase_pending: { type: Number, default: 0 },
     points_purchase_ss: { type: String, default: null },
     points_purchase_transaction: { type: String, default: null }
@@ -907,7 +906,6 @@ class UltimateBot {
         try {
             const user = await User.findOne({ telegram_id: userId.toString() });
             
-            // Check if user already has pending points purchase
             if (user && user.points_purchase_pending > 0) {
                 await this.bot.sendMessage(
                     chatId,
@@ -925,7 +923,6 @@ class UltimateBot {
                 return;
             }
 
-            // Ask how many points they want
             this.conversations.set(userId, { step: 'points_amount' });
             
             await this.bot.sendMessage(
@@ -958,7 +955,6 @@ class UltimateBot {
             const amount = points * CONFIG.pointPrice;
             const transactionId = `PTS-${randomstring.generate({length: 10, charset: 'numeric'})}`;
 
-            // Update user with pending points
             await User.findOneAndUpdate(
                 { telegram_id: userId.toString() },
                 {
@@ -968,7 +964,6 @@ class UltimateBot {
                 }
             );
 
-            // Save payment record
             const payment = new Payment({
                 user_id: userId.toString(),
                 username: username,
@@ -1012,7 +1007,6 @@ class UltimateBot {
             const fileId = photo[photo.length - 1].file_id;
             const file = await this.bot.getFile(fileId);
 
-            // Update payment with screenshot
             await Payment.findOneAndUpdate(
                 { transaction_id: transactionId },
                 { 
@@ -1036,14 +1030,13 @@ class UltimateBot {
                     `✅ Screenshot Received!\n\n📤 Your transaction screenshot has been sent to admin.\n\n⏳ Please wait for admin approval (5-15 minutes).\n\n📋 Transaction ID: ${transactionId}\n\n✅ You will be notified when approved.`
                 );
             } else if (paymentType === 'points') {
-                // Points are already stored in user
                 await this.bot.sendMessage(
                     chatId,
                     `✅ Screenshot Received!\n\n📤 Your points purchase screenshot has been sent to admin.\n\n⏳ Please wait for admin approval (5-15 minutes).\n\n📋 Transaction ID: ${transactionId}\n📊 Points: ${this.conversations.get(userId)?.points || 0}\n\n✅ You will be notified when approved.`
                 );
             }
 
-            // Forward to admin with approve/reject buttons
+            // ✅ NEW: Forward to admin with 3 options: Approve, Reject, Reply
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const payment = await Payment.findOne({ transaction_id: transactionId });
@@ -1065,12 +1058,18 @@ class UltimateBot {
                     }
 
                     caption += `🆔 Transaction: ${transactionId}\n\n`;
-                    caption += `📌 Approve or Reject:`;
+                    caption += `📌 Choose Action:`;
 
+                    // ✅ 3 OPTIONS: Approve, Reject, Reply to User
                     const keyboard = {
                         inline_keyboard: [
-                            [{ text: '✅ Approve', callback_data: `approve_${transactionId}` }],
-                            [{ text: '❌ Reject', callback_data: `reject_${transactionId}` }]
+                            [
+                                { text: '✅ Approve', callback_data: `approve_${transactionId}` },
+                                { text: '❌ Reject', callback_data: `reject_${transactionId}` }
+                            ],
+                            [
+                                { text: '💬 Reply to User', callback_data: `reply_${transactionId}` }
+                            ]
                         ]
                     };
 
@@ -1126,7 +1125,6 @@ class UltimateBot {
                 await payment.save();
 
                 if (payment.payment_type === 'protection') {
-                    // Protection approval
                     user.protection_status = 'approved';
                     user.protection_type = payment.protection_type;
                     user.transaction_id = transactionId;
@@ -1145,7 +1143,6 @@ class UltimateBot {
                     );
 
                 } else if (payment.payment_type === 'points') {
-                    // Points purchase approval
                     user.points += payment.points;
                     user.points_purchase_pending = 0;
                     user.points_purchase_transaction = null;
@@ -1166,7 +1163,6 @@ class UltimateBot {
                 }
 
             } else {
-                // Reject payment
                 payment.status = 'rejected';
                 await payment.save();
 
@@ -1210,6 +1206,77 @@ class UltimateBot {
 
         } catch (error) {
             addLog(`❌ Payment approval error: ${error.message}`, 'ERROR');
+            await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+        }
+    }
+
+    // ============================================
+    // HANDLE ADMIN REPLY TO USER - NEW ✅
+    // ============================================
+
+    async handleAdminReply(chatId, adminId, transactionId) {
+        try {
+            const payment = await Payment.findOne({ transaction_id: transactionId });
+            if (!payment) {
+                await this.bot.sendMessage(chatId, '❌ Payment not found.');
+                return;
+            }
+
+            const user = await User.findOne({ telegram_id: payment.user_id });
+            if (!user) {
+                await this.bot.sendMessage(chatId, '❌ User not found.');
+                return;
+            }
+
+            addLog(`💬 Admin ${adminId} started reply for transaction ${transactionId}`, 'INFO');
+
+            this.conversations.set(adminId, { 
+                step: 'admin_reply',
+                transactionId: transactionId,
+                userId: user.telegram_id,
+                username: user.username
+            });
+
+            await this.bot.sendMessage(
+                chatId,
+                `💬 Reply to User\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n📋 Transaction: ${transactionId}\n\n📝 Send your message to the user.\n\nType /cancel to cancel.`
+            );
+
+        } catch (error) {
+            addLog(`❌ Admin reply error: ${error.message}`, 'ERROR');
+            await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+        }
+    }
+
+    // ============================================
+    // HANDLE ADMIN REPLY MESSAGE - NEW ✅
+    // ============================================
+
+    async handleAdminReplyMessage(chatId, adminId, text, transactionId, userId) {
+        try {
+            // Send message to user
+            await this.bot.sendMessage(
+                parseInt(userId),
+                `📩 Message from Admin\n\n${text}`
+            );
+
+            // Update payment with admin note
+            await Payment.findOneAndUpdate(
+                { transaction_id: transactionId },
+                { admin_note: text }
+            );
+
+            await this.bot.sendMessage(
+                chatId,
+                `✅ Reply sent to user!\n\n👤 User ID: ${userId}\n📋 Transaction: ${transactionId}\n📝 Message: ${text}`
+            );
+
+            addLog(`💬 Admin ${adminId} replied to user ${userId} for transaction ${transactionId}`, 'INFO');
+
+            this.conversations.delete(adminId);
+
+        } catch (error) {
+            addLog(`❌ Admin reply message error: ${error.message}`, 'ERROR');
             await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
         }
     }
@@ -1308,7 +1375,6 @@ class UltimateBot {
 
     async handleReferral(userId, referrerId, newUserUsername = null) {
         try {
-            // Check if referrer is subscribed to ALL channels
             const subStatus = await this.checkAllSubscriptions(parseInt(referrerId));
             if (!subStatus.allSubscribed) {
                 addLog(`❌ Referrer ${referrerId} not subscribed to all channels, referral denied`, 'WARN');
@@ -1327,15 +1393,11 @@ class UltimateBot {
                 return false;
             }
 
-            // ✅ REMOVED: No rate limit, no per-minute restriction
-            // Users can refer as many as they want
-
-            // Add points
+            // ✅ NO LIMIT - Unlimited referrals
             referrer.points += 1;
             referrer.referrals += 1;
             await referrer.save();
 
-            // Update analytics
             await Analytics.updateOne(
                 { date: { $gte: new Date().setHours(0,0,0,0) } },
                 { $inc: { total_referrals: 1 } },
@@ -1344,7 +1406,6 @@ class UltimateBot {
 
             addLog(`🔗 Referral: User ${userId} referred by @${referrer.username}`, 'INFO');
 
-            // Notify referrer
             const referralLink = await this.getReferralLink(referrer.telegram_id);
             try {
                 const newUser = await User.findOne({ telegram_id: userId });
@@ -1357,7 +1418,6 @@ class UltimateBot {
                 addLog(`❌ Failed to notify referrer: ${e.message}`, 'ERROR');
             }
 
-            // Notify admins about referral
             for (const adminId of CONFIG.adminIds) {
                 try {
                     const newUser = await User.findOne({ telegram_id: userId });
@@ -1529,7 +1589,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // CALLBACK QUERY HANDLER
+        // CALLBACK QUERY HANDLER - WITH REPLY OPTION ✅
         // ============================================
 
         this.bot.on('callback_query', async (query) => {
@@ -1579,6 +1639,7 @@ class UltimateBot {
                     return;
                 }
 
+                // ✅ Approve
                 if (data.startsWith('approve_')) {
                     const transactionId = data.replace('approve_', '');
                     await this.handlePaymentApproval(chatId, userId, transactionId, true);
@@ -1586,9 +1647,18 @@ class UltimateBot {
                     return;
                 }
 
+                // ✅ Reject
                 if (data.startsWith('reject_')) {
                     const transactionId = data.replace('reject_', '');
                     await this.handlePaymentApproval(chatId, userId, transactionId, false);
+                    await this.bot.answerCallbackQuery(query.id);
+                    return;
+                }
+
+                // ✅ NEW: Reply to User
+                if (data.startsWith('reply_')) {
+                    const transactionId = data.replace('reply_', '');
+                    await this.handleAdminReply(chatId, userId, transactionId);
                     await this.bot.answerCallbackQuery(query.id);
                     return;
                 }
@@ -1820,7 +1890,7 @@ ${referralLink}
 🎯 How it works:
 1. Share your referral link
 2. Each new user = 1 point
-3. ${CONFIG.refersForReport} points = 100 report (${CONFIG.reportsPerTarget} reports for 99.99% ban)
+3. ${CONFIG.refersForReport} points = 1 report (${CONFIG.reportsPerTarget} reports for 99.99% ban)
 4. No limit on referrals!
 
 ⚠️ Important: You must stay subscribed to ALL channels to earn points!
@@ -1935,8 +2005,9 @@ No Evidence (Skip) | 5%
 • Pending Points Purchases: ${pendingPoints}
 
 🔧 Commands:
-• /addpoints @username 5 - Add points
-• /setpoints @username 10 - Set points
+• /addpoints @username/userid 5 - Add points
+• /removepoints @username/userid 5 - Remove points
+• /setpoints @username/userid 10 - Set points
 • /protect @username - Protect target (free)
 • /unprotect @username - Remove protection
 • /banuser @username - Ban user
@@ -1954,6 +2025,188 @@ No Evidence (Skip) | 5%
 • /listchannels - List all channels`;
 
             await this.bot.sendMessage(chatId, adminMessage);
+        });
+
+        // ============================================
+        // ADMIN: ADD POINTS - BY USERNAME OR USERID ✅
+        // ============================================
+
+        this.bot.onText(/\/addpoints (.+) (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const target = match[1].trim();
+            const points = parseInt(match[2].trim());
+
+            if (isNaN(points) || points < 1) {
+                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /addpoints @username/userid 5');
+                return;
+            }
+
+            try {
+                let user = null;
+                
+                if (/^\d+$/.test(target)) {
+                    user = await User.findOne({ telegram_id: target });
+                } else {
+                    user = await User.findOne({ username: target.replace('@', '') });
+                }
+                
+                if (!user) {
+                    await this.bot.sendMessage(chatId, `❌ User not found: ${target}`);
+                    return;
+                }
+
+                user.points += points;
+                await user.save();
+
+                addLog(`⭐ Admin added ${points} points to @${user.username} (${user.telegram_id})`, 'INFO');
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ Points Added!\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Added: ${points}\n📊 Total Points: ${user.points}`
+                );
+
+                try {
+                    await this.bot.sendMessage(
+                        parseInt(user.telegram_id),
+                        `⭐ Admin Added Points!\n\n📊 +${points} points added to your account!\n⭐ Total Points: ${user.points}`
+                    );
+                } catch (e) {}
+
+            } catch (error) {
+                addLog(`❌ Add points error: ${error.message}`, 'ERROR');
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+        });
+
+        // ============================================
+        // ADMIN: REMOVE POINTS - BY USERNAME OR USERID ✅
+        // ============================================
+
+        this.bot.onText(/\/removepoints (.+) (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const target = match[1].trim();
+            const points = parseInt(match[2].trim());
+
+            if (isNaN(points) || points < 1) {
+                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /removepoints @username/userid 5');
+                return;
+            }
+
+            try {
+                let user = null;
+                
+                if (/^\d+$/.test(target)) {
+                    user = await User.findOne({ telegram_id: target });
+                } else {
+                    user = await User.findOne({ username: target.replace('@', '') });
+                }
+                
+                if (!user) {
+                    await this.bot.sendMessage(chatId, `❌ User not found: ${target}`);
+                    return;
+                }
+
+                if (user.points < points) {
+                    await this.bot.sendMessage(
+                        chatId,
+                        `❌ User doesn't have enough points!\n\n👤 User: @${user.username}\n📊 Current Points: ${user.points}\n❌ Cannot remove ${points} points.`
+                    );
+                    return;
+                }
+
+                user.points -= points;
+                await user.save();
+
+                addLog(`⭐ Admin removed ${points} points from @${user.username} (${user.telegram_id})`, 'INFO');
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ Points Removed!\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Removed: ${points}\n📊 Total Points: ${user.points}`
+                );
+
+                try {
+                    await this.bot.sendMessage(
+                        parseInt(user.telegram_id),
+                        `❌ Admin Removed Points!\n\n📊 -${points} points removed from your account!\n⭐ Total Points: ${user.points}`
+                    );
+                } catch (e) {}
+
+            } catch (error) {
+                addLog(`❌ Remove points error: ${error.message}`, 'ERROR');
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+        });
+
+        // ============================================
+        // ADMIN: SET POINTS - BY USERNAME OR USERID ✅
+        // ============================================
+
+        this.bot.onText(/\/setpoints (.+) (.+)/, async (msg, match) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            const target = match[1].trim();
+            const points = parseInt(match[2].trim());
+
+            if (isNaN(points) || points < 0) {
+                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /setpoints @username/userid 10');
+                return;
+            }
+
+            try {
+                let user = null;
+                
+                if (/^\d+$/.test(target)) {
+                    user = await User.findOne({ telegram_id: target });
+                } else {
+                    user = await User.findOne({ username: target.replace('@', '') });
+                }
+                
+                if (!user) {
+                    await this.bot.sendMessage(chatId, `❌ User not found: ${target}`);
+                    return;
+                }
+
+                user.points = points;
+                await user.save();
+
+                addLog(`⭐ Admin set ${points} points to @${user.username} (${user.telegram_id})`, 'INFO');
+
+                await this.bot.sendMessage(
+                    chatId,
+                    `✅ Points Set!\n\n👤 User: @${user.username}\n🆔 ID: ${user.telegram_id}\n⭐ Points Set: ${points}`
+                );
+
+                try {
+                    await this.bot.sendMessage(
+                        parseInt(user.telegram_id),
+                        `⭐ Admin Set Points!\n\n📊 Your points have been set to ${points}!\n⭐ Total Points: ${user.points}`
+                    );
+                } catch (e) {}
+
+            } catch (error) {
+                addLog(`❌ Set points error: ${error.message}`, 'ERROR');
+                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
         });
 
         // ============================================
@@ -2065,94 +2318,6 @@ No Evidence (Skip) | 5%
         });
 
         // ============================================
-        // ADMIN: ADD POINTS
-        // ============================================
-
-        this.bot.onText(/\/addpoints (.+) (.+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            if (!CONFIG.adminIds.includes(parseInt(userId))) {
-                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
-                return;
-            }
-
-            const target = match[1].trim();
-            const points = parseInt(match[2].trim());
-
-            if (isNaN(points) || points < 1) {
-                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /addpoints @username 5');
-                return;
-            }
-
-            try {
-                const user = await User.findOne({ username: target.replace('@', '') });
-                if (!user) {
-                    await this.bot.sendMessage(chatId, '❌ User not found.');
-                    return;
-                }
-
-                user.points += points;
-                await user.save();
-
-                addLog(`⭐ Admin added ${points} points to @${user.username}`, 'INFO');
-
-                await this.bot.sendMessage(
-                    chatId,
-                    `✅ Points Added!\n\n👤 User: @${user.username}\n⭐ Points Added: ${points}\n📊 Total Points: ${user.points}`
-                );
-
-            } catch (error) {
-                addLog(`❌ Add points error: ${error.message}`, 'ERROR');
-                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
-            }
-        });
-
-        // ============================================
-        // ADMIN: SET POINTS
-        // ============================================
-
-        this.bot.onText(/\/setpoints (.+) (.+)/, async (msg, match) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            if (!CONFIG.adminIds.includes(parseInt(userId))) {
-                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
-                return;
-            }
-
-            const target = match[1].trim();
-            const points = parseInt(match[2].trim());
-
-            if (isNaN(points) || points < 0) {
-                await this.bot.sendMessage(chatId, '❌ Invalid points. Use: /setpoints @username 10');
-                return;
-            }
-
-            try {
-                const user = await User.findOne({ username: target.replace('@', '') });
-                if (!user) {
-                    await this.bot.sendMessage(chatId, '❌ User not found.');
-                    return;
-                }
-
-                user.points = points;
-                await user.save();
-
-                addLog(`⭐ Admin set ${points} points to @${user.username}`, 'INFO');
-
-                await this.bot.sendMessage(
-                    chatId,
-                    `✅ Points Set!\n\n👤 User: @${user.username}\n⭐ Points Set: ${points}`
-                );
-
-            } catch (error) {
-                addLog(`❌ Set points error: ${error.message}`, 'ERROR');
-                await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
-            }
-        });
-
-        // ============================================
         // ADMIN: PROTECT (Free)
         // ============================================
 
@@ -2253,7 +2418,13 @@ No Evidence (Skip) | 5%
             const target = match[1].trim();
 
             try {
-                const user = await User.findOne({ username: target.replace('@', '') });
+                let user = null;
+                if (/^\d+$/.test(target)) {
+                    user = await User.findOne({ telegram_id: target });
+                } else {
+                    user = await User.findOne({ username: target.replace('@', '') });
+                }
+                
                 if (user) {
                     user.is_banned = true;
                     await user.save();
@@ -2287,7 +2458,13 @@ No Evidence (Skip) | 5%
             const target = match[1].trim();
 
             try {
-                const user = await User.findOne({ username: target.replace('@', '') });
+                let user = null;
+                if (/^\d+$/.test(target)) {
+                    user = await User.findOne({ telegram_id: target });
+                } else {
+                    user = await User.findOne({ username: target.replace('@', '') });
+                }
+                
                 if (user) {
                     user.is_banned = false;
                     await user.save();
@@ -2500,7 +2677,7 @@ No Evidence (Skip) | 5%
     }
 
     // ============================================
-    // MESSAGE HANDLER
+    // MESSAGE HANDLER - WITH ADMIN REPLY ✅
     // ============================================
 
     setupMessageHandler() {
@@ -2552,6 +2729,17 @@ No Evidence (Skip) | 5%
                     addLog(`🚫 Banned user @${username} tried to use bot`, 'WARN');
                     await this.bot.sendMessage(chatId, '❌ You are banned from using this bot.');
                     this.conversations.delete(userId);
+                    return;
+                }
+
+                // ============================================
+                // ADMIN REPLY - NEW ✅
+                // ============================================
+
+                if (conversation.step === 'admin_reply') {
+                    const transactionId = conversation.transactionId;
+                    const targetUserId = conversation.userId;
+                    await this.handleAdminReplyMessage(chatId, userId, text, transactionId, targetUserId);
                     return;
                 }
 
