@@ -1,7 +1,6 @@
 // ============================================
-// ULTIMATE BAN BOT v3.0 - NEW REFERRAL SYSTEM
-// FULLY WORKING REFERRAL + CHANNEL VERIFICATION
-// NO MARKDOWN PARSING ERRORS - FIXED ✅
+// ULTIMATE BAN BOT v3.0 - FULLY FIXED
+// BROADCAST FIXED + 5 POINTS DEDUCTION
 // ============================================
 
 const TelegramBot = require('node-telegram-bot-api');
@@ -28,9 +27,9 @@ const CONFIG = {
     adminIds: JSON.parse(process.env.ADMIN_IDS || '[6346250222]'),
     mongoUri: process.env.MONGODB_URI || 'mongodb+srv://sahajada07x:Apon07@sahajada.a8r2wdp.mongodb.net/?appName=Sahajada',
     port: parseInt(process.env.PORT || '10000'),
-    refersForReport: parseInt(process.env.REFERS_FOR_REPORT || '5'),
+    refersForReport: 5, // ✅ 5 points per report
     maxWorkers: parseInt(process.env.MAX_WORKERS || '50'),
-    reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '100'),
+    reportsPerTarget: parseInt(process.env.REPORTS_PER_TARGET || '150'),
     rateLimitPerUser: parseInt(process.env.RATE_LIMIT_PER_USER || '3'),
     protectionPrice: parseInt(process.env.PROTECTION_PRICE || '40'),
     pointPrice: 2,
@@ -70,7 +69,7 @@ const CONFIG = {
 };
 
 // ============================================
-// BOT USERNAME - HARDCODED ✅
+// BOT USERNAME - HARDCODED
 // ============================================
 
 const BOT_USERNAME = CONFIG.botUsername;
@@ -193,6 +192,7 @@ const BroadcastSchema = new mongoose.Schema({
     message_type: { type: String, enum: ['text', 'photo', 'video', 'document'] },
     content: String,
     media_url: String,
+    file_id: String,
     caption: String,
     sent_count: { type: Number, default: 0 },
     total_count: { type: Number, default: 0 },
@@ -496,7 +496,7 @@ class UltimateBot {
 
     init() {
         addLog('='.repeat(70), 'INFO');
-        addLog('🚀 ULTIMATE BAN BOT v3.0 - NEW REFERRAL SYSTEM', 'INFO');
+        addLog('🚀 ULTIMATE BAN BOT v3.0 - FULLY FIXED', 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog(`📡 Bot: ${CONFIG.token.substring(0, 10)}...`, 'INFO');
         addLog(`📢 Bot Username: @${BOT_USERNAME}`, 'INFO');
@@ -505,6 +505,7 @@ class UltimateBot {
         addLog(`📊 Reports: ${CONFIG.reportsPerTarget}`, 'INFO');
         addLog(`🛡️ Protection Price: ₹${CONFIG.protectionPrice}`, 'INFO');
         addLog(`💰 Points Price: ₹${CONFIG.pointPrice}/point`, 'INFO');
+        addLog(`⭐ Points Per Report: ${CONFIG.refersForReport}`, 'INFO');
         addLog('='.repeat(70), 'INFO');
         addLog('✅ Bot is LIVE!', 'INFO');
         addLog('='.repeat(70), 'INFO');
@@ -653,7 +654,7 @@ class UltimateBot {
     }
 
     // ============================================
-    // GET MAIN MENU - WITH BUY POINTS BUTTON
+    // GET MAIN MENU
     // ============================================
 
     getMainMenu() {
@@ -859,15 +860,13 @@ class UltimateBot {
             }
 
             const points = user.points || 0;
-            const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
-            const reportsUsed = user.reports_used || 0;
-            const remaining = reportsAvailable - reportsUsed;
-
-            if (remaining <= 0) {
+            
+            // ✅ Check if user has at least 5 points
+            if (points < CONFIG.refersForReport) {
                 const referralLink = this.getReferralLink(userId);
                 await this.bot.sendMessage(
                     chatId,
-                    `❌ Insufficient Reports!\n\nNeed ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Earn more: ${referralLink}\n\n💰 Or buy points using "Buy Points" button!`
+                    `❌ Insufficient Points!\n\nNeed ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Earn more: ${referralLink}\n\n💰 Or buy points using "Buy Points" button!`
                 );
                 return;
             }
@@ -892,7 +891,7 @@ class UltimateBot {
 
             await this.bot.sendMessage(
                 chatId,
-                `🎯 Report ${typeNames[targetType]}\n\nSend the ${typeNames[targetType].toLowerCase()} username or link.\n\n📝 Example: ${typeExamples[targetType]}\n\n⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!\n\n💡 /help for more info`,
+                `🎯 Report ${typeNames[targetType]}\n\nSend the ${typeNames[targetType].toLowerCase()} username or link.\n\n📝 Example: ${typeExamples[targetType]}\n\n⚠️ ${CONFIG.reportsPerTarget} reports will be sent for 99.99% ban chance!\n⭐ Cost: ${CONFIG.refersForReport} points\n📊 Your Points: ${points}\n\n💡 /help for more info`,
                 {
                     reply_markup: {
                         keyboard: [['❌ Cancel']],
@@ -1505,12 +1504,117 @@ class UltimateBot {
     }
 
     // ============================================
-    // COMMANDS - FIXED ✅ (NO Markdown)
+    // BROADCAST - FULLY FIXED ✅
+    // ============================================
+
+    async handleBroadcast(chatId, adminId, msg) {
+        try {
+            const text = msg.text;
+            const photo = msg.photo;
+            const video = msg.video;
+            const document = msg.document;
+            const caption = msg.caption || '';
+
+            let messageType = 'text';
+            let content = text;
+            let fileId = null;
+            let mediaUrl = null;
+
+            if (photo) {
+                messageType = 'photo';
+                fileId = photo[photo.length - 1].file_id;
+                content = caption;
+            } else if (video) {
+                messageType = 'video';
+                fileId = video.file_id;
+                content = caption;
+            } else if (document) {
+                messageType = 'document';
+                fileId = document.file_id;
+                content = caption;
+            }
+
+            if (!content && messageType === 'text') {
+                await this.bot.sendMessage(chatId, '❌ Please send a message to broadcast.');
+                return;
+            }
+
+            // Count users
+            const totalUsers = await User.countDocuments({ is_banned: false });
+            
+            if (totalUsers === 0) {
+                await this.bot.sendMessage(chatId, '❌ No users to broadcast to.');
+                return;
+            }
+
+            // Create broadcast record
+            const broadcast = new Broadcast({
+                admin_id: adminId.toString(),
+                message_type: messageType,
+                content: content,
+                file_id: fileId,
+                total_count: totalUsers,
+                status: 'pending'
+            });
+            await broadcast.save();
+
+            await this.bot.sendMessage(
+                chatId,
+                `📢 Broadcasting to ${totalUsers} users...\n\n⏳ Please wait.`
+            );
+
+            // Get all users
+            const users = await User.find({ is_banned: false });
+            let sent = 0;
+            let failed = 0;
+
+            for (const user of users) {
+                try {
+                    if (messageType === 'text') {
+                        await this.bot.sendMessage(parseInt(user.telegram_id), content);
+                    } else if (messageType === 'photo') {
+                        await this.bot.sendPhoto(parseInt(user.telegram_id), fileId, { caption: content });
+                    } else if (messageType === 'video') {
+                        await this.bot.sendVideo(parseInt(user.telegram_id), fileId, { caption: content });
+                    } else if (messageType === 'document') {
+                        await this.bot.sendDocument(parseInt(user.telegram_id), fileId, { caption: content });
+                    }
+                    sent++;
+                } catch (e) {
+                    failed++;
+                }
+                
+                // Small delay to avoid rate limiting
+                if (sent % 10 === 0) {
+                    await this.delay(100);
+                }
+            }
+
+            // Update broadcast record
+            broadcast.sent_count = sent;
+            broadcast.status = 'sent';
+            await broadcast.save();
+
+            await this.bot.sendMessage(
+                chatId,
+                `✅ Broadcast Complete!\n\n📤 Sent: ${sent}\n❌ Failed: ${failed}\n📊 Total Users: ${totalUsers}`
+            );
+
+            addLog(`📢 Broadcast sent to ${sent} users by admin ${adminId}`, 'INFO');
+
+        } catch (error) {
+            addLog(`❌ Broadcast error: ${error.message}`, 'ERROR');
+            await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+        }
+    }
+
+    // ============================================
+    // COMMANDS
     // ============================================
 
     setupCommands() {
         // ============================================
-        // START COMMAND - FIXED ✅
+        // START COMMAND
         // ============================================
 
         this.bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
@@ -1638,7 +1742,6 @@ class UltimateBot {
 
                 const referralLink = this.getReferralLink(userId);
 
-                // ✅ FIXED: NO Markdown
                 const welcomeMessage = 
 `🔥 ULTIMATE BAN BOT v3.0
 
@@ -1651,6 +1754,7 @@ class UltimateBot {
 ⚡ Features:
 • 99.99% Success Rate
 • ${CONFIG.reportsPerTarget} Reports per Target
+• ${CONFIG.refersForReport} Points per Report
 • 3 Report Types: Account, Channel, Group
 • 🛡️ Protection System
 
@@ -1668,7 +1772,6 @@ class UltimateBot {
 
 /help for more info`;
 
-                // ✅ NO parse_mode
                 await this.bot.sendMessage(chatId, welcomeMessage, this.getMainMenu());
 
             } catch (error) {
@@ -1877,7 +1980,7 @@ class UltimateBot {
         });
 
         // ============================================
-        // MY STATS - NO Markdown ✅
+        // MY STATS
         // ============================================
 
         this.bot.onText(/📊 My Stats/, async (msg) => {
@@ -1951,7 +2054,7 @@ ${referralLink}
         });
 
         // ============================================
-        // REFER & EARN - NO Markdown ✅
+        // REFER & EARN
         // ============================================
 
         this.bot.onText(/🔗 Refer & Earn/, async (msg) => {
@@ -2006,7 +2109,7 @@ ${referralLink}`;
         });
 
         // ============================================
-        // HELP - NO Markdown ✅
+        // HELP
         // ============================================
 
         this.bot.onText(/ℹ️ Help/, async (msg) => {
@@ -2021,6 +2124,7 @@ ${referralLink}`;
 3. Upload evidence (screenshots, links, descriptions)
 4. Bot sends ${CONFIG.reportsPerTarget} reports
 5. 99.99% ban chance!
+6. Costs ${CONFIG.refersForReport} points per report
 
 🛡️ Protection System:
 1. Click "🛡️ Protection"
@@ -2076,7 +2180,7 @@ No Evidence (Skip) | 5%
         });
 
         // ============================================
-        // ADMIN PANEL - NO Markdown ✅
+        // ADMIN PANEL
         // ============================================
 
         this.bot.onText(/👑 Admin Panel/, async (msg) => {
@@ -2114,7 +2218,7 @@ No Evidence (Skip) | 5%
 • /unprotect @username - Remove protection
 • /banuser @username - Ban user
 • /unbanuser @username - Unban user
-• /broadcast - Send message
+• /broadcast - Send message (text/photo/video)
 • /stats - Detailed stats
 • /logs - View logs
 • /addqr - Add QR code (send photo)
@@ -2127,6 +2231,27 @@ No Evidence (Skip) | 5%
 • /listchannels - List all channels`;
 
             await this.bot.sendMessage(chatId, adminMessage);
+        });
+
+        // ============================================
+        // ADMIN: BROADCAST - FIXED ✅
+        // ============================================
+
+        this.bot.onText(/\/broadcast/, async (msg) => {
+            const chatId = msg.chat.id;
+            const userId = msg.from.id;
+
+            if (!CONFIG.adminIds.includes(parseInt(userId))) {
+                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                return;
+            }
+
+            this.conversations.set(userId, { step: 'broadcast' });
+            addLog(`📢 Admin ${userId} started broadcast`, 'INFO');
+            await this.bot.sendMessage(
+                chatId,
+                `📢 Broadcast Message\n\nSend your broadcast message.\n\nYou can send:\n• Text message\n• Photo with caption\n• Video with caption\n• Document with caption\n\nType /cancel to cancel.`
+            );
         });
 
         // ============================================
@@ -2585,27 +2710,6 @@ No Evidence (Skip) | 5%
         });
 
         // ============================================
-        // ADMIN: BROADCAST
-        // ============================================
-
-        this.bot.onText(/\/broadcast/, async (msg) => {
-            const chatId = msg.chat.id;
-            const userId = msg.from.id;
-
-            if (!CONFIG.adminIds.includes(parseInt(userId))) {
-                await this.bot.sendMessage(chatId, '❌ Unauthorized.');
-                return;
-            }
-
-            this.conversations.set(userId, { step: 'broadcast' });
-            addLog(`📢 Admin ${userId} started broadcast`, 'INFO');
-            await this.bot.sendMessage(
-                chatId,
-                `📢 Broadcast Message\n\nSend your broadcast message.\n\nType /cancel to cancel.`
-            );
-        });
-
-        // ============================================
         // ADMIN: STATS
         // ============================================
 
@@ -2636,6 +2740,8 @@ No Evidence (Skip) | 5%
 💰 Points Purchase:
 • Price: ₹${CONFIG.pointPrice}/point
 • Minimum: ${CONFIG.minPointsPurchase} points
+
+⭐ Points Per Report: ${CONFIG.refersForReport}
 
 📊 Recent Analytics:\n`;
             
@@ -2811,6 +2917,26 @@ No Evidence (Skip) | 5%
             addLog(`📥 Message from @${username}: ${text || 'Media'}`, 'INFO');
 
             try {
+                // ✅ BROADCAST HANDLER - FIXED
+                if (conversation.step === 'broadcast') {
+                    const isAdmin = CONFIG.adminIds.includes(parseInt(userId));
+                    if (!isAdmin) {
+                        await this.bot.sendMessage(chatId, '❌ Unauthorized.');
+                        this.conversations.delete(userId);
+                        return;
+                    }
+
+                    // Check if message has content
+                    if (!text && !photo && !video && !document) {
+                        await this.bot.sendMessage(chatId, '❌ Please send a message, photo, video, or document to broadcast.');
+                        return;
+                    }
+
+                    await this.handleBroadcast(chatId, userId, msg);
+                    this.conversations.delete(userId);
+                    return;
+                }
+
                 const subStatus = await this.checkAllSubscriptions(userId);
                 if (!subStatus.allSubscribed) {
                     await this.showMissingChannels(chatId, userId, subStatus.missingChannels);
@@ -2932,7 +3058,7 @@ Skip Evidence | 5%
                 }
 
                 // ============================================
-                // EVIDENCE (Report)
+                // EVIDENCE (Report) - ✅ 5 POINTS DEDUCTION
                 // ============================================
 
                 else if (conversation.step === 'evidence') {
@@ -2996,20 +3122,22 @@ Skip Evidence | 5%
 
                     const user = await User.findOne({ telegram_id: userId.toString() });
                     const points = user.points || 0;
-                    const reportsAvailable = Math.floor(points / CONFIG.refersForReport);
-                    const reportsUsed = user.reports_used || 0;
-                    const remaining = reportsAvailable - reportsUsed;
 
-                    addLog(`📊 User @${username}: Available=${reportsAvailable}, Used=${reportsUsed}, Remaining=${remaining}`, 'INFO');
+                    addLog(`📊 User @${username}: Points=${points}, Need=${CONFIG.refersForReport}`, 'INFO');
 
-                    if (remaining <= 0) {
-                        addLog(`❌ User @${username} insufficient reports`, 'WARN');
-                        await this.bot.sendMessage(chatId, '❌ Insufficient reports!');
+                    // ✅ Check if user has enough points (5 points needed)
+                    if (points < CONFIG.refersForReport) {
+                        addLog(`❌ User @${username} insufficient points: ${points}/${CONFIG.refersForReport}`, 'WARN');
+                        await this.bot.sendMessage(
+                            chatId, 
+                            `❌ Insufficient points!\n\nYou need ${CONFIG.refersForReport} points for 1 report.\nCurrent points: ${points}\n\n🔗 Refer friends to earn points!\n💰 Or buy points using "Buy Points" button!`
+                        );
                         this.conversations.delete(userId);
                         await this.bot.sendMessage(chatId, '❌ Action cancelled.', this.getMainMenu());
                         return;
                     }
 
+                    // Create report
                     const report = new Report({
                         user_id: userId.toString(),
                         target_username: target,
@@ -3022,12 +3150,19 @@ Skip Evidence | 5%
 
                     addLog(`📋 Report created: ${report._id} for @${target}`, 'INFO');
 
+                    // ✅ DEDUCT 5 POINTS
+                    user.reports_used += 1;
+                    user.points -= CONFIG.refersForReport;  // Deducts 5 points
+                    await user.save();
+
+                    addLog(`⭐ User @${username} used 1 report. Points: ${user.points} (-${CONFIG.refersForReport})`, 'INFO');
+
                     const evidenceStatus = evidenceText ? '✅ Provided' : '❌ Skipped';
                     const banChance = evidenceText ? '95%' : '5%';
 
                     await this.bot.sendMessage(
                         chatId,
-                        `⚙️ Processing Ban for ${target}\n\n📊 ${CONFIG.reportsPerTarget} reports being sent\n🎯 Target: ${target}\n📋 Type: ${targetType.toUpperCase()}\n📤 Evidence: ${evidenceStatus}\n🎯 Ban Chance: ${banChance}\n\n⏳ Please wait... This takes 2-3 minutes.`
+                        `⚙️ Processing Ban for ${target}\n\n📊 ${CONFIG.reportsPerTarget} reports being sent\n🎯 Target: ${target}\n📋 Type: ${targetType.toUpperCase()}\n📤 Evidence: ${evidenceStatus}\n🎯 Ban Chance: ${banChance}\n⭐ Points Used: ${CONFIG.refersForReport}\n📊 Remaining Points: ${user.points}\n\n⏳ Please wait... This takes 2-3 minutes.`
                     );
 
                     this.queue.push({
@@ -3128,77 +3263,6 @@ Skip Evidence | 5%
                         addLog(`❌ Add QR error: ${error.message}`, 'ERROR');
                         await this.bot.sendMessage(chatId, `❌ Error: ${error.message}`);
                     }
-                }
-
-                // ============================================
-                // BROADCAST
-                // ============================================
-
-                else if (conversation.step === 'broadcast') {
-                    addLog(`📢 Broadcast from admin @${username}`, 'INFO');
-                    
-                    let content = text;
-                    let messageType = 'text';
-                    let mediaUrl = null;
-
-                    if (photo) {
-                        messageType = 'photo';
-                        const file = await this.bot.getFile(photo[photo.length - 1].file_id);
-                        mediaUrl = file.file_path;
-                        content = msg.caption || '';
-                    } else if (video) {
-                        messageType = 'video';
-                        const file = await this.bot.getFile(video.file_id);
-                        mediaUrl = file.file_path;
-                        content = msg.caption || '';
-                    } else if (document) {
-                        messageType = 'document';
-                        const file = await this.bot.getFile(document.file_id);
-                        mediaUrl = file.file_path;
-                        content = msg.caption || '';
-                    }
-
-                    const broadcast = new Broadcast({
-                        admin_id: userId.toString(),
-                        message_type: messageType,
-                        content: content,
-                        media_url: mediaUrl,
-                        total_count: await User.countDocuments({ is_banned: false })
-                    });
-                    await broadcast.save();
-
-                    const users = await User.find({ is_banned: false });
-                    let sent = 0;
-
-                    for (const user of users) {
-                        try {
-                            if (messageType === 'text') {
-                                await this.bot.sendMessage(user.telegram_id, content);
-                            } else if (messageType === 'photo') {
-                                await this.bot.sendPhoto(user.telegram_id, mediaUrl, { caption: content });
-                            } else if (messageType === 'video') {
-                                await this.bot.sendVideo(user.telegram_id, mediaUrl, { caption: content });
-                            } else if (messageType === 'document') {
-                                await this.bot.sendDocument(user.telegram_id, mediaUrl, { caption: content });
-                            }
-                            sent++;
-                        } catch (e) {
-                            continue;
-                        }
-                    }
-
-                    broadcast.sent_count = sent;
-                    broadcast.status = 'sent';
-                    await broadcast.save();
-
-                    addLog(`📢 Broadcast sent to ${sent} users`, 'INFO');
-
-                    this.conversations.delete(userId);
-                    await this.bot.sendMessage(
-                        chatId,
-                        `✅ Broadcast sent to ${sent} users!`,
-                        this.getMainMenu()
-                    );
                 }
 
             } catch (error) {
@@ -3360,9 +3424,8 @@ Skip Evidence | 5%
             });
 
             if (user) {
-                user.reports_used += 1;
-                user.reports_success += successCount;
-                user.reports_failed += failedCount;
+                // Points already deducted in evidence section
+                // Just update report stats
                 await user.save();
             }
 
